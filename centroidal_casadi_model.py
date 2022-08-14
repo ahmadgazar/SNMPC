@@ -36,22 +36,22 @@ class CentroidalModelCasadi:
         self._Cov_w = conf.cov_w  
         self._Cov_eta = conf.cov_white_noise                                                           
         # private methods
-        self.__set_init_and_final_states(conf)
+        # self.__set_init_and_final_states(conf)
         self.__fill_contact_data(conf)
-        self.__fill_initial_trajectory()
+        # self.__fill_initial_trajectory()
         self.__setup_casadi_dynamics_model()
     
     # private methods
-    def __set_init_and_final_states(self, conf):
-        self._DYNAMICS_FIRST = conf.DYNAMICS_FIRST
-        if conf.DYNAMICS_FIRST:
-            self._com_z = conf.com_z
-            self._x_init = conf.x_init
-            self._x_final = conf.x_final   
-        else:
-            IK_to_Dyn = np.load('wholeBody_to_centroidal_traj.npz')['X']                             
-            self._x_init = IK_to_Dyn[0]
-            self._x_final = IK_to_Dyn[-1]
+    # def __set_init_and_final_states(self, conf):
+    #     self._DYNAMICS_FIRST = conf.DYNAMICS_FIRST
+    #     if conf.DYNAMICS_FIRST:
+    #         self._com_z = conf.com_z
+    #         self._x_init = conf.x_init
+    #         self._x_final = conf.x_final   
+    #     else:
+    #         IK_to_Dyn = np.load('wholeBody_to_centroidal_traj.npz')['X']                             
+    #         self._x_init = IK_to_Dyn[0]
+    #         self._x_final = IK_to_Dyn[-1]
    
     def __fill_contact_data(self, conf):
         contact_trajectory = create_contact_trajectory(conf)
@@ -86,26 +86,26 @@ class CentroidalModelCasadi:
                            contacts_orient=contacts_orientation, 
                             contacts_position=contacts_position)            
     
-    def __fill_initial_trajectory(self):
-        N = self._N
-        init_trajectories = {'state':np.zeros((self._n_x, N+1)), 'control':np.zeros((self._n_u, N))}
-        if self._DYNAMICS_FIRST:
-            warn('currently kinematics first is only supported!')    
-            pass 
-        else:   
-            # warm-start SCP states using whole-body DDP
-            init_trajectories['state'] = np.array(np.load('wholeBody_to_centroidal_traj.npz')['X'])
-            # warm-start stochastic SCP controls 
-            robot_weight =  -self._m*self._g
-            contacts_logic_total = self._contact_data['contacts_logic']
-            for time_idx, contacts_logic_k in enumerate(contacts_logic_total):
-                robot_weight_per_contact = robot_weight/np.sum(contacts_logic_k)
-                for contact_idx, contact_logic in enumerate(contacts_logic_k):
-                    if contact_logic:
-                        fx_idx = contact_idx*3
-                        init_trajectories['control'][fx_idx:fx_idx+3, time_idx] = \
-                                   np.array([1e-3, 1e-3, robot_weight_per_contact])
-        self._init_trajectories = init_trajectories
+    # def __fill_initial_trajectory(self):
+    #     N = self._N
+    #     init_trajectories = {'state':np.zeros((self._n_x, N+1)), 'control':np.zeros((self._n_u, N))}
+    #     if self._DYNAMICS_FIRST:
+    #         warn('currently kinematics first is only supported!')    
+    #         pass 
+    #     else:   
+    #         # warm-start SCP states using whole-body DDP
+    #         init_trajectories['state'] = np.array(np.load('wholeBody_to_centroidal_traj.npz')['X'])
+    #         # warm-start stochastic SCP controls 
+    #         robot_weight =  -self._m*self._g
+    #         contacts_logic_total = self._contact_data['contacts_logic']
+    #         for time_idx, contacts_logic_k in enumerate(contacts_logic_total):
+    #             robot_weight_per_contact = robot_weight/np.sum(contacts_logic_k)
+    #             for contact_idx, contact_logic in enumerate(contacts_logic_k):
+    #                 if contact_logic:
+    #                     fx_idx = contact_idx*3
+    #                     init_trajectories['control'][fx_idx:fx_idx+3, time_idx] = \
+    #                                np.array([1e-3, 1e-3, robot_weight_per_contact])
+    #     self._init_trajectories = init_trajectories
 
     def __setup_casadi_dynamics_model(self):
         m, g = self._m, self._g       

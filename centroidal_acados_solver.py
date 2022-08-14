@@ -90,6 +90,7 @@ class CentroidalSolverAcados:
             self.ocp.constraints.x0 = self.x_init[0] 
             # terminal constraints
             x_goal = self.x_init[-1]
+            print(x_goal)
             self.ocp.constraints.idxbx_e = np.array(range(self.nx))
             self.ocp.constraints.lbx_e = x_goal 
             self.ocp.constraints.ubx_e = x_goal        
@@ -118,10 +119,10 @@ class CentroidalSolverAcados:
         ## ---------------------
         # self.ocp.solver_options.nlp_solver_type = "SQP"
         self.ocp.solver_options.nlp_solver_type = "SQP_RTI"
-        self.ocp.solver_options.nlp_solver_tol_stat = 2e-3
+        self.ocp.solver_options.nlp_solver_tol_stat = 1e-6
         self.ocp.solver_options.nlp_solver_tol_eq = 1e-6
         self.ocp.solver_options.nlp_solver_tol_ineq = 1e-6
-        self.ocp.solver_options.nlp_solver_tol_comp = 1e-6
+        self.ocp.solver_options.nlp_solver_tol_comp = 1e-1
         # self.ocp.solver_options.nlp_solver_max_iter=0
         # self.ocp.solver_options.nlp_solver_step_length=1e-20
         # self.ocp.solver_options.globalization = ['FIXED_STEP', 'MERIT_BACKTRACKING']
@@ -168,6 +169,58 @@ class CentroidalSolverAcados:
             solver.set(time_idx, 'x', x_ref_N[time_idx])
         x_ref_terminal = x_ref_N[-1]
         solver.set(N, 'x', x_ref_terminal) 
+
+    def update_ocp(self, time_idx, x0):
+        # trajectory references
+        N_traj, N_mpc = self.N_traj, self.N_mpc
+        contacts_logic = self.contact_data['contacts_logic']
+        contacts_position = self.contact_data['contacts_position']
+        contacts_norms = self.contact_data['contacts_orient']
+        x_ref_mpc = self.x_ref_mpc
+        # get acados solver object
+        solver = self.acados_solver
+        # get horizon references 
+        horizon_range = range(time_idx,time_idx+N_mpc)
+        x_ref_N = x_ref_mpc[horizon_range] 
+        contacts_logic_N = contacts_logic[horizon_range]
+        contacts_position_N = contacts_position[horizon_range] 
+        contacts_norms_N = contacts_norms[horizon_range]
+        # OCP loop
+        for mpc_time_idx in range(N_mpc):
+            x_ref_k = x_ref_N[mpc_time_idx]
+            y_ref_k = np.concatenate([x_ref_k, np.zeros(self.nu)])
+            contacts_logic_k = contacts_logic_N[mpc_time_idx]
+            contacts_position_k = contacts_position_N[mpc_time_idx]
+            contacts_norms_k = contacts_norms_N[mpc_time_idx].flatten()
+            contact_params_k = np.concatenate([contacts_logic_k,
+                            contacts_position_k, contacts_norms_k])            
+            # update paramters and tracking cost
+            solver.set(mpc_time_idx, 'p', contact_params_k)
+            solver.cost_set(mpc_time_idx,'yref', y_ref_k)
+        x_ref_terminal = x_ref_mpc[time_idx+N_mpc]
+        # terminal constraints
+        self.ocp.constraints.idxbx_e = np.array(range(self.nx))
+        self.ocp.constraints.lbx_e = x_ref_terminal 
+        self.ocp.constraints.ubx_e = x_ref_terminal     
+        # update terminal cost
+        solver.cost_set(N_mpc,'yref', x_ref_terminal)
+        # solve OCP
+        print('\n'+'=' * 50)
+        print('MPC Iteration ' + str(time_idx))
+        print('-' * 50)
+        # update initial conditon
+        solver.set(0, "lbx", x0)
+        solver.set(0, "ubx", x0)
+        if self.ocp.solver_options.nlp_solver_type == 'SQP_RTI':
+            # QP preparation rti_phase:
+            print('starting RTI preparation phase ' + '...')
+            solver.options_set('rti_phase', 1)
+            t_prep = time.time()
+            status = solver.solve()
+            elapsed_prep = time.time() - t_prep
+            self.elapsed_prep = elapsed_prep
+        else:
+            self.elapsed_prep = 0
 
     def run_mpc(self):
         # trajectory references
@@ -307,4 +360,4 @@ class CentroidalSolverAcados:
             X_sim = np.array([solver.get(i,"x") for i in range(N+1)])
             U_sim = np.array([solver.get(i,"u") for i in range(N)])
         return X_sim, U_sim    
-
+  

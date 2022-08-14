@@ -11,10 +11,10 @@ dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'TROT',
       'stepLength' : 0.12,
-      'stepHeight' : 0.1,
+      'stepHeight' : 0.05,
       'stepKnots' : 15,
-      'supportKnots' : 5,
-      'nbSteps': 4}
+      'supportKnots' : 3,
+      'nbSteps': 5}
 
 mu = 0.5 # linear friction coefficient
 
@@ -49,7 +49,8 @@ gait_templates, contact_sequence = create_contact_sequence(dt, gait, ee_frame_na
 # planning and control horizon lengths:
 # -------------------------------------
 N = int(round(contact_sequence[-1][0].t_end/dt, 2))
-N_mpc = 100#int(round(contact_sequence[2][0].t_end/dt, 2))
+N_mpc = 90#int(round(contact_sequence[2][0].t_end/dt, 2))
+N_mpc_wbd = 40
 N_ctrl = int((N-1)*(dt/dt_ctrl))    
 # LQR gains (for stochastic control)      
 # ----------------------------------
@@ -79,15 +80,16 @@ beta_u = 0.01 # probability of constraint violation
 
 # centroidal cost objective weights:
 # ----------------------------------
-state_cost_weights = np.diag([5e1, 5e1, 5e1, 1e2, 1e2, 1e2, 5e3, 5e3, 5e3])
-control_cost_weights = np.diag([1e0, 1e0, 1e0, 
-                                1e0, 1e0, 1e0,
-                                1e0, 1e0, 1e0,
-                                1e0, 1e0, 1e0])
-          
-whole_body_task_weights = {'footTrack':{'swing':1e6, 'impact':1e6}, 'impulseVel':20, 'comTrack':1e3, 'stateBounds':0e3, 
-                            'stateReg':{'stance':0.1, 'impact':1}, 'ctrlReg':{'stance':1, 'impact':10}, 'frictionCone':20,
-                            'centroidalTrack': 1e3, 'contactForceTrack':1e2}                                        
+state_cost_weights = np.diag([5e1, 5e1, 5e1, 1e3, 1e3, 1e3, 1e5, 1e5, 1e5])
+control_cost_weights = np.diag([5e0, 1e0, 1e0, 
+                                5e0, 1e0, 1e0,
+                                5e0, 1e0, 1e0,
+                                5e0, 1e0, 1e0])
+# whole-body cost objective weights:
+# # ----------------------------------         
+whole_body_task_weights = {'footTrack':{'swing':1e7, 'impact':1e7}, 'impulseVel':1e6, 'comTrack':1e5, 'stateBounds':0e3, 
+                            'stateReg':{'stance':1e-1, 'impact':1e0}, 'ctrlReg':{'stance':1e-3, 'impact':1e-2}, 'frictionCone':20,
+                            'centroidalTrack': 1e4, 'contactForceTrack':1e2}                                        
 # SCP solver parameters:
 # --------------------- 
 scp_params  = {'trust_region_radius0':  100, 'omega0': 100, 'omega_max': 1e10, 'epsilon': 1e-6, 'rho0': 0.4,

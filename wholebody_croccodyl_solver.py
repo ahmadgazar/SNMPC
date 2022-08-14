@@ -1,16 +1,18 @@
+from re import M
 import crocoddyl
 import pinocchio
 import numpy as np
 
 class WholeBodyDDPSolver:
     # constructor
-    def __init__(self, model, MPC=False, WARM_START=False):
+    def __init__(self, model, centroidalTask=None, forceTask=None, MPC=False, WARM_START=True):
         self.RECEEDING_HORIZON = MPC
         # timing
         self.N_mpc = model.N_mpc
         self.N_traj = model.N
         self.dt = model.dt
         self.dt_ctrl = model.dt_ctrl
+        self.N_interpol = int(model.dt/model.dt_ctrl)
         # whole-body croccodyl model
         self.whole_body_model = model    
         # initial condition and warm-start
@@ -20,14 +22,13 @@ class WholeBodyDDPSolver:
         self.RECEEDING_HORIZON = MPC
         # initialize ocp and create DDP solver
         self.__init_ocp_and_solver()
-        if MPC and WARM_START:
-            self.__warm_start_mpc()
+        if MPC:
+            self.warm_start_mpc(centroidalTask, forceTask)
 
     def __init_ocp_and_solver(self):
         wbd_model, N_mpc = self.whole_body_model,  self.N_mpc
         if self.RECEEDING_HORIZON:
-            for _ in range(N_mpc):
-                wbd_model.running_models += [self.add_terminal_cost()]    
+           self.add_extended_horizon_mpc_models()
         else:
             wbd_model.terminal_model = self.add_terminal_cost()
             ocp = crocoddyl.ShootingProblem(self.x0, 
@@ -35,14 +36,22 @@ class WholeBodyDDPSolver:
                                 wbd_model.terminal_model)
             self.solver = crocoddyl.SolverFDDP(ocp)
             self.solver.setCallbacks([crocoddyl.CallbackLogger(),
-                                    crocoddyl.CallbackVerbose()])            
-    def __warm_start_mpc(self):
+                                    crocoddyl.CallbackVerbose()])     
+
+    def warm_start_mpc(self, centroidalTask, forceTask):
         print('\n'+'=' * 50)
-        print('Warm-starting first MPC iteration ..')
+        print('Warm-starting first WBD MPC iteration ..')
         print('-' * 50)
-        running_models = self.whole_body_model.running_models[:self.N_mpc]
-        terminal_model = running_models[-1]
-        ocp = crocoddyl.ShootingProblem(self.x0, running_models,terminal_model)
+        N_mpc = self.N_mpc
+        running_models_N = self.whole_body_model.running_models[:N_mpc]
+        if centroidalTask is not None:
+            centroidalTask_N = centroidalTask[:N_mpc]
+            self.add_centroidal_costs(running_models_N, centroidalTask_N)
+        if forceTask is not None:
+            forceTask_N = forceTask[:N_mpc]
+            self.add_force_tracking_cost(running_models_N, forceTask_N)    
+        terminal_model = running_models_N[-1]
+        ocp = crocoddyl.ShootingProblem(self.x0, running_models_N,terminal_model)
         solver = crocoddyl.SolverFDDP(ocp)
         solver.setCallbacks([crocoddyl.CallbackLogger(),
                           crocoddyl.CallbackVerbose()]) 
@@ -53,6 +62,10 @@ class WholeBodyDDPSolver:
         self.x_init = solver.xs
         self.u_init = solver.us    
     
+    def add_extended_horizon_mpc_models(self):
+        for _ in range(self.N_mpc):
+            self.whole_body_model.running_models += [self.add_terminal_cost()]  
+
     def add_terminal_cost(self):
         wbd_model = self.whole_body_model
         final_contact_sequence = wbd_model.contact_sequence[-1]
@@ -73,10 +86,10 @@ class WholeBodyDDPSolver:
                                        centroidalTask=None,forceTask=None)
         return terminalCostModel
 
-    def add_com_tracking_cost(self, diff_cost, com_des):
+    def add_com_task(self, diff_cost, com_des):
         state, nu = self.whole_body_model.state, self.whole_body_model.actuation.nu
         com_residual = crocoddyl.ResidualModelCoMPosition(state, com_des, nu)
-        com_activation = crocoddyl.ActivationModelWeightedQuad(np.array([1., 1., 10.]))
+        com_activation = crocoddyl.ActivationModelWeightedQuad(np.array([1., 1., 1.]))
         com_track = crocoddyl.CostModelResidual(state, com_activation, com_residual)
         diff_cost.addCost("comTrack", com_track, self.whole_body_model.task_weights['comTrack'])
     
@@ -89,49 +102,74 @@ class WholeBodyDDPSolver:
                 cost.cost.residual.reference = com_ref
                 return True
         return False    
-
-    def add_centroidal_momentum_tracking_cost(self, diff_cost, hg_des):
+    
+    def update_centroidal_reference(self, dam, hg_ref):
+        for _, cost in dam.costs.todict().items():
+            # update CoM reference
+            if isinstance(cost.cost.residual,  
+                crocoddyl.libcrocoddyl_pywrap.ResidualModelCentroidalMomentum):
+                # print("updating com tracking reference at node ")
+                cost.cost.residual.reference = hg_ref
+                return True
+        return False    
+        
+    def add_centroidal_momentum_task(self, diff_cost, hg_des):
         wbd_model = self.whole_body_model
         state, nu = wbd_model.state, wbd_model.actuation.nu
         hg_residual = crocoddyl.ResidualModelCentroidalMomentum(state, hg_des, nu)
-        hg_activation = crocoddyl.ActivationModelWeightedQuad(np.array([1., 1., 1., 5., 10., 1.]))
+        hg_activation = crocoddyl.ActivationModelWeightedQuad(np.array([1., 1., 1., 1., 1., 1.]))
         hg_track = crocoddyl.CostModelResidual(state, hg_activation, hg_residual)
         diff_cost.addCost("centroidalTrack", hg_track, wbd_model.task_weights['centroidalTrack'])  
 
-    def add_centroidal_tracking_costs(self, centroidal_ref):
-        self.centroidal_ref = centroidal_ref
-        if self.RECEEDING_HORIZON:
-            centroidal_ref_final = centroidal_ref[:, -1].reshape(centroidal_ref[:, -1].shape[0], 1)
-            # append references to the same as the last time-step
-            for _ in range(self.N_mpc):
-                self.centroidal_ref = np.concatenate([self.centroidal_ref, 
-                                            centroidal_ref_final], axis=1)
-        else:
-            ## update terminal model
-            dam_final = self.whole_body_model.terminal_model.differential.costs
-            com_ref_final = self.centroidal_ref[:3, -1]
-            # update CoM reference
-            FOUND_COM_COST = self.update_com_reference(dam_final, com_ref_final)
-            # create a CoM terminal tracking cost
-            if not FOUND_COM_COST:
-                self.add_com_tracking_cost(dam_final, com_ref_final)
-            self.add_centroidal_momentum_tracking_cost(dam_final, self.centroidal_ref[3:9, -1])                                
+    def add_centroidal_costs(self, iam_N, centroidal_ref_N):                              
         ## update running model
-        for time_idx, iam_k in enumerate(self.whole_body_model.running_models):
+        for centroidal_ref_k, iam_k in zip(centroidal_ref_N, iam_N):
             dam_k = iam_k.differential.costs
-            com_ref_k = self.centroidal_ref[:3, time_idx]
-            hg_ref_k = self.centroidal_ref[3:9, time_idx]
-            # update CoM reference
+            com_ref_k = centroidal_ref_k[:3]
+            hg_ref_k = centroidal_ref_k[3:9]
+            # update references if cost exists
             FOUND_COM_COST = self.update_com_reference(dam_k, com_ref_k)
-            # create a CoM tracking cost
+            FOUND_HG_COST = self.update_centroidal_reference(dam_k, hg_ref_k)
+            # create cost otherwise
             if not FOUND_COM_COST:
                 # print("adding com tracking cost at node ", time_idx)
-                self.add_com_tracking_cost(dam_k, com_ref_k)
-            self.add_centroidal_momentum_tracking_cost(dam_k, hg_ref_k)
+                self.add_com_task(dam_k, com_ref_k)
+            if not FOUND_HG_COST:     
+                self.add_centroidal_momentum_task(dam_k, hg_ref_k)
     
+    def update_force_reference(self, dam, f_ref):
+        wbd_model = self.whole_body_model
+        rmodel, rdata = wbd_model.rmodel, wbd_model.rdata
+        COST_REF_UPDATED = False
+        for _, cost in dam.costs.todict().items():
+            if isinstance(cost.cost.residual,  
+                crocoddyl.libcrocoddyl_pywrap.ResidualModelContactForce):
+                frame_idx = cost.cost.residual.id
+                # print("updating force tracking reference for contact id ", frame_idx)
+                pinocchio.framesForwardKinematics(rmodel, rdata, self.x0[:rmodel.nq])
+                if frame_idx == wbd_model.rfFootId:
+                    cost.cost.residual.reference = rdata.oMf[frame_idx].actInv(
+                                                pinocchio.Force(f_ref[0:3], np.zeros(3))
+                                                )
+                elif frame_idx == wbd_model.lfFootId:
+                    cost.cost.residual.reference = rdata.oMf[frame_idx].actInv(
+                                                pinocchio.Force(f_ref[3:6], np.zeros(3))
+                                                ) 
+                elif frame_idx == wbd_model.rhFootId:
+                    cost.cost.residual.reference = rdata.oMf[frame_idx].actInv(
+                                                pinocchio.Force(f_ref[6:9], np.zeros(3)) 
+                                                )
+                elif frame_idx == wbd_model.lhFootId: 
+                    cost.cost.residual.reference = rdata.oMf[frame_idx].actInv(
+                                                pinocchio.Force(f_ref[9:12], np.zeros(3))
+                                                )
+                COST_REF_UPDATED = True      
+        return COST_REF_UPDATED    
+
     def add_force_tasks(self, diff_cost, force_des, support_feet_ids):
         wbd_model = self.whole_body_model
         rmodel, rdata = wbd_model.rmodel, wbd_model.rdata 
+        pinocchio.framesForwardKinematics(rmodel, rdata, self.x0[:rmodel.nq])
         state, nu = wbd_model.state, wbd_model.actuation.nu        
         forceTrackWeight = wbd_model.task_weights['contactForceTrack']
         if rmodel.name == 'solo':
@@ -139,19 +177,20 @@ class WholeBodyDDPSolver:
         elif rmodel.name == 'talos':
             nu_contact = 6
         for frame_idx in support_feet_ids:
+            # print("adding force tracking reference for contact id ", frame_idx)
             if frame_idx == wbd_model.rfFootId:
                 spatial_force_des = rdata.oMf[frame_idx].actInv(
                     pinocchio.Force(force_des[0:3], np.zeros(3))
                     )
-            if frame_idx == wbd_model.lfFootId:
+            elif frame_idx == wbd_model.lfFootId:
                 spatial_force_des = rdata.oMf[frame_idx].actInv(
                     pinocchio.Force(force_des[3:6], np.zeros(3))
                     )
-            if frame_idx == wbd_model.rhFootId:
+            elif frame_idx == wbd_model.rhFootId:
                 spatial_force_des = rdata.oMf[frame_idx].actInv(
                     pinocchio.Force(force_des[6:9], np.zeros(3))
                     )
-            if frame_idx == wbd_model.lhFootId:
+            elif frame_idx == wbd_model.lhFootId:
                 spatial_force_des = rdata.oMf[frame_idx].actInv(
                     pinocchio.Force(force_des[9:12], np.zeros(3))
                     )
@@ -163,37 +202,40 @@ class WholeBodyDDPSolver:
             diff_cost.addCost(rmodel.frames[frame_idx].name +"contactForceTrack", 
                                                    force_track, forceTrackWeight)
 
-    def add_force_tracking_cost(self, force_ref):
-        wbd_model = self.whole_body_model
-        self.force_ref = force_ref
-        if self.RECEEDING_HORIZON:
-            force_ref_final = force_ref[:, -1].reshape(force_ref[:, -1].shape[0], 1)
-            # append references to the same as the last time-step
-            for _ in range(self.N_mpc):
-                self.force_ref = np.concatenate([self.force_ref, 
-                                       force_ref_final], axis=1)
-        for time_idx, iam_k in enumerate(wbd_model.running_models):
-            force_ref_k = self.force_ref[:, time_idx]
+    def add_force_tracking_cost(self, iam_N, force_ref_N):
+        for force_ref_k, iam_k in zip(force_ref_N, iam_N):
             dam_k = iam_k.differential.costs
             support_foot_ids = []
             for _, cost in dam_k.costs.todict().items():
                 if isinstance(cost.cost.residual,  
                     crocoddyl.libcrocoddyl_pywrap.ResidualModelContactFrictionCone):
                     support_foot_ids += [cost.cost.residual.id]
-            self.add_force_tasks(dam_k, force_ref_k, support_foot_ids)
+            FOUND_FORCE_COST = self.update_force_reference(dam_k, force_ref_k)        
+            if not FOUND_FORCE_COST:
+                self.add_force_tasks(dam_k, force_ref_k, support_foot_ids)
     
     def solve(self, x_warm_start=False, u_warm_start=False, max_iter=100):
         solver = self.solver
         if x_warm_start and u_warm_start:
-            solver.solve(x_warm_start, u_warm_start, max_iter)
+            solver.solve(x_warm_start, u_warm_start)
         else:
             x0 = self.x0
             xs = [x0]*(solver.problem.T + 1)
             us = solver.problem.quasiStatic([x0]*solver.problem.T)
-            solver.solve(xs, us, max_iter)    
+            solver.solve(xs, us)    
     
-    def update_ocp(self, running_models, terminal_model):
-        ocp = crocoddyl.ShootingProblem(self.x0, running_models, terminal_model)
+    def update_ocp(self, time_idx, centroidalTask=None, forceTask=None):
+        # update models
+        N_mpc = self.N_mpc
+        running_models_N = self.whole_body_model.running_models[time_idx:time_idx+N_mpc]
+        if centroidalTask is not None:
+            centroidalTask_N = centroidalTask[time_idx:time_idx+N_mpc]
+            self.add_centroidal_costs(running_models_N, centroidalTask)
+        if forceTask is not None:
+            forceTask_N = forceTask[time_idx:time_idx+N_mpc]
+            self.add_force_tracking_cost(running_models_N, forceTask)
+        current_terminal_model = running_models_N[-1]
+        ocp = crocoddyl.ShootingProblem(self.x0, running_models_N, current_terminal_model)
         self.solver = crocoddyl.SolverFDDP(ocp)
         self.solver.setCallbacks([crocoddyl.CallbackLogger(),
                                 crocoddyl.CallbackVerbose()])         
@@ -201,19 +243,14 @@ class WholeBodyDDPSolver:
     """
     open-loop MPC: re-solving the OCP from the next predicted state
     """
-    def run_OL_MPC(self):
-        running_models = self.whole_body_model.running_models
-        N_traj, N_mpc = self.N_traj, self.N_mpc
-        # create solution tuples
+    def run_OL_MPC(self, centroidalTask=None, forceTask=None):
+        N_traj = self.N_traj
         sol = []
         for traj_time_idx in range(N_traj):
-            # update models
-            current_running_models = running_models[traj_time_idx:traj_time_idx+N_mpc]
-            current_terminal_model = current_running_models[-1]
             print('\n'+'=' * 50)
             print('MPC Iteration ' + str(traj_time_idx))
             print('-' * 50)
-            self.update_ocp(current_running_models, current_terminal_model)
+            self.update_ocp(traj_time_idx, centroidalTask, forceTask)
             if traj_time_idx == 0:
                 if self.WARM_START:
                     self.solver.solve(self.x_init, self.u_init)
@@ -231,6 +268,23 @@ class WholeBodyDDPSolver:
             # update initial condition
             self.x0 = self.solver.xs[1]
         return sol 
+
+    def interpolate_one_step(self, q, q_next, qdot, qdot_next, tau, tau_next):
+        N_interpol, rmodel = self.N_interpol, self.whole_body_model.rmodel
+        q_interpol = np.zeros((N_interpol, len(q)))
+        qdot_interpol = np.zeros((N_interpol, len(qdot)))
+        tau_intepol = np.zeros((N_interpol, len(tau)))
+        dtau = (tau_next - tau)/float(N_interpol)
+        dq = pinocchio.difference(rmodel,q, q_next)/float(N_interpol)
+        dqdot = (qdot_next - qdot)/float(N_interpol)
+        for i in range(N_interpol):
+            qdot_interpol[i] = qdot + i*dqdot
+            tau_intepol[i] = tau + i*dtau 
+            if i == 0:
+                q_interpol[i] = q
+            else:
+                q_interpol[i] = pinocchio.integrate(rmodel, q_interpol[i-1], dq)   
+        return q_interpol, qdot_interpol, tau_intepol   
 
     def interpolate_solution(self, solution):
         x, tau = solution['centroidal'], solution['jointTorques']
@@ -283,23 +337,20 @@ class WholeBodyDDPSolver:
         jointTorques_sol = []#np.zeros((N-1, nv-6))
         centroidal_sol = []#np.zeros((N, 9))
         gains = []#np.zeros((N-1, K[0].shape[0], K[0].shape[1]))
+        x = []
         for time_idx in range (N):
             q, v = xs[time_idx][:nq], xs[time_idx][nq:]
             pinocchio.framesForwardKinematics(rmodel, rdata, q)
             pinocchio.computeCentroidalMomentum(rmodel, rdata, q, v)
-            centroidal_sol += [pinocchio.centerOfMass(rmodel, rdata, q, v), np.array(rdata.hg)]
+            centroidal_sol += [np.concatenate([pinocchio.centerOfMass(rmodel, rdata, q, v), np.array(rdata.hg)])]
             jointPos_sol += [q]
             jointVel_sol += [v]
+            x += [xs[time_idx]]
             if time_idx < N-1:
                 jointAcc_sol +=  [self.solver.problem.runningDatas[time_idx].xnext[nq::]] 
-                if len(us[time_idx]) != 0:
-                    jointTorques_sol += [us[time_idx]]
-                    gains += [K[time_idx]]
-        sol = {'centroidal':centroidal_sol, 'jointPos':jointPos_sol, 
-               'jointVel':jointVel_sol, 'jointAcc':jointAcc_sol, 
-               'jointTorques':jointTorques_sol, 'gains':gains}        
-        return sol   
-
-
-
-
+                jointTorques_sol += [us[time_idx]]
+                gains += [K[time_idx]]
+        sol = {'x':x, 'centroidal':centroidal_sol, 'jointPos':jointPos_sol, 
+                          'jointVel':jointVel_sol, 'jointAcc':jointAcc_sol, 
+                            'jointTorques':jointTorques_sol, 'gains':gains}        
+        return sol

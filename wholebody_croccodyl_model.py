@@ -14,9 +14,10 @@ class WholeBodyModel:
         self.gait_templates = conf.gait_templates 
         self.task_weights = conf.whole_body_task_weights
         # Defining the friction coefficient and normal
+        self.postImpact = None
         self.mu = conf.mu
         self.N = conf.N
-        self.N_mpc = conf.N_mpc
+        self.N_mpc = conf.N_mpc_wbd
         self.Rsurf = np.eye(3)
         self.__initialize_robot(conf.q0)
         self.__set_contact_frame_names_and_indices()
@@ -62,38 +63,11 @@ class WholeBodyModel:
             foot_track = crocoddyl.CostModelResidual(self.state, frame_pose_residual)
             cost.addCost(self.rmodel.frames[task[0]].name + "_footTrack", foot_track, weight)
     
-    # def add_impact_dynamics_model(self, supportFootIds, swingFootTask, JMinvJt_damping=1e-12, r_coeff=0.0):
-    #     # Creating a 3D multi-contact model, and then including the supporting foot
-    #     impulseModel = crocoddyl.ImpulseModelMultiple(self.state)
-    #     for i in supportFootIds:
-    #         supportContactModel = crocoddyl.ImpulseModel3D(self.state, i)
-    #         impulseModel.addImpulse(self.rmodel.frames[i].name + "_impulse", supportContactModel)
-    #     # Creating the cost model for a contact phase
-    #     impact_costs = crocoddyl.CostModelSum(self.state, 0)
-    #     if swingFootTask is not None:
-    #         for task in swingFootTask:
-    #             frame_pose_residual = crocoddyl.ResidualModelFrameTranslation(self.state,
-    #                                                      task[0], task[1].translation, 0)
-    #             foot_track = crocoddyl.CostModelResidual(self.state, frame_pose_residual)
-    #             impact_costs.addCost(self.rmodel.frames[task[0]].name + "_footTrack", 
-    #                                     foot_track, self.task_weights['footTrack']['swing'])                                            
-    #     stateWeights = np.array([1.] * 6 + [10.] * (self.rmodel.nv - 6) + [10.] * self.rmodel.nv)        
-    #     stateResidual = crocoddyl.ResidualModelState(self.state, self.rmodel.defaultState, 0)
-    #     stateActivation = crocoddyl.ActivationModelWeightedQuad(stateWeights**2)
-    #     stateReg = crocoddyl.CostModelResidual(self.state, stateActivation, stateResidual)
-    #     impact_costs.addCost("stateReg", stateReg, 1e1)
-    #     # Creating the action model for the KKT dynamics with simpletic Euler
-    #     # integration scheme
-    #     model = crocoddyl.ActionModelImpulseFwdDynamics(self.state, impulseModel, impact_costs)
-    #     model.JMinvJt_damping = JMinvJt_damping
-    #     model.r_coeff = r_coeff
-    #     return model
-
     def add_pseudo_impact_costs(self, support_feet_ids, swing_feet_tasks):
         state, nu = self.state, self.actuation.nu
         foot_pos_weight = self.task_weights['footTrack']['impact']
         foot_impact_weight = self.task_weights['impulseVel']
-        contactModel = crocoddyl.ContactModelMultiple(state, nu)
+        # contactModel = crocoddyl.ContactModelMultiple(state, nu)
         # Creating the cost model for a contact phase
         costModel = crocoddyl.CostModelSum(state, nu)
         for task in swing_feet_tasks:
@@ -105,13 +79,7 @@ class WholeBodyModel:
             impulseFootVelCost = crocoddyl.CostModelResidual(state, frameVelocityResidual)
             costModel.addCost(self.rmodel.frames[task[0]].name + "_footTrack", footTrack, foot_pos_weight)
             costModel.addCost(self.rmodel.frames[task[0]].name + "_impulseVel",
-                                impulseFootVelCost, foot_impact_weight)
-        self.add_support_contact_costs(contactModel, costModel, support_feet_ids)
-        self.add_stat_ctrl_reg_costs(costModel, True)
-        dmodel = crocoddyl.DifferentialActionModelContactFwdDynamics(state, self.actuation, contactModel,
-                                                                        costModel, 0., True)
-        model = crocoddyl.IntegratedActionModelEuler(dmodel, self.dt)
-        return model                                                        
+                                impulseFootVelCost, foot_impact_weight)                                                 
 
     def add_swing_feet_impact_costs(self, cost, swing_feet_tasks):
         nu = self.actuation.nu
@@ -132,11 +100,9 @@ class WholeBodyModel:
         state, nu = self.state, self.actuation.nu
         rmodel = self.rmodel
         frictionConeWeight = self.task_weights['frictionCone']
-        forceTrackWeight = self.task_weights['contactForceTrack']
-        if rmodel.name == 'solo' or rmodel.name == 'bolt' or rmodel.name == 'bolt_humanoid':
-            nu_contact = 3
-        elif rmodel.name == 'talos':
-            nu_contact = 6
+        # check if it's a post-impact knot
+        if self.postImpact is not None:
+            self.add_pseudo_impact_costs(support_feet_ids, self.postImpact)
         for frame_idx in support_feet_ids:
             R_cone_local = self.rdata.oMf[frame_idx].rotation.T.dot(self.Rsurf)
             if rmodel.name == 'solo': 
@@ -159,7 +125,7 @@ class WholeBodyModel:
     
     def add_com_position_tracking_cost(self, cost, com_des):    
         com_residual = crocoddyl.ResidualModelCoMPosition(self.state, com_des, self.actuation.nu)
-        com_activation = crocoddyl.ActivationModelWeightedQuad(np.array([1., 1., 10.]))
+        com_activation = crocoddyl.ActivationModelWeightedQuad(np.array([1., 1., 1.]))
         com_track = crocoddyl.CostModelResidual(self.state, com_activation, com_residual)
         cost.addCost("comTrack", com_track, self.task_weights['comTrack'])
 
@@ -168,9 +134,10 @@ class WholeBodyModel:
         stateWeights = np.array([0.]*3 + [500.]*3 +\
                       [0.01]*(self.rmodel.nv - 6) + \
               [10.]*6 + [1.]*(self.rmodel.nv - 6))
-        if preImpact:
+        if self.postImpact is not None:
             state_reg_weight, control_reg_weight = self.task_weights['stateReg']['impact'],\
                                                     self.task_weights['ctrlReg']['impact']
+            self.postImpact = None                                        
         else:
             state_reg_weight, control_reg_weight = self.task_weights['stateReg']['stance'],\
                                                     self.task_weights['ctrlReg']['stance']
@@ -291,8 +258,8 @@ class WholeBodyModel:
                 elif phase == 'rflfStep':
                     loco3dModel += self.createSingleSupportFootstepModels([rfFootPos0, lfFootPos0], 
                                     [self.rhFootId, self.lhFootId], [self.rfFootId, self.lfFootId])
-                    # add impact models
-                    loco3dModel += self.add_impact_dynamics_costs                 
+                    # # add impact models
+                    # loco3dModel += self.add_impact_dynamics_costs                 
                 elif phase == 'rhlhStep':
                     loco3dModel += self.createSingleSupportFootstepModels([rhFootPos0, lhFootPos0], 
                                     [self.rfFootId, self.lfFootId], [self.rhFootId, self.lhFootId])
@@ -340,13 +307,13 @@ class WholeBodyModel:
             comTask = np.array([stepLength * (k + 1) / numKnots, 0., 0.]) * comPercentage + self.comRef
             centroidalTask = None
             forceTask = None
-            preImpact = False 
+            # postImpact = False 
             if k == numKnots-1:
-                preImpact = True
+                self.postImpact = swingFootTask
             else:
-                preImpact = False    
+                self.postImpact = None    
             footSwingModel += [
-                self.createSwingFootModel(supportFootIds, preImpact, comTask=comTask, 
+                self.createSwingFootModel(supportFootIds, preImpactTask=False, comTask=comTask, 
                         centroidalTask=centroidalTask, swingFootTask=swingFootTask, forceTask=forceTask)
                     ]
         # Updating the current foot position for next step
@@ -365,10 +332,7 @@ class WholeBodyModel:
         if isinstance(comTask, np.ndarray):
             self.add_com_position_tracking_cost(costModel, comTask)
         if swingFootTask is not None:
-            if preImpactTask:
-                self.add_swing_feet_impact_costs(costModel, swingFootTask)
-            else:
-                self.add_swing_feet_tracking_costs(costModel, swingFootTask)
+            self.add_swing_feet_tracking_costs(costModel, swingFootTask)
         self.add_support_contact_costs(contactModel, costModel, supportFootIds, forceTask)
         self.add_stat_ctrl_reg_costs(costModel, preImpactTask)
         # Creating the action model for the KKT dynamics with simpletic Euler integration scheme
