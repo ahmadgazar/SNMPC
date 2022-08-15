@@ -34,13 +34,12 @@ class WholeBodyModel:
     def __set_contact_frame_names_and_indices(self):
         ee_frame_names = self.ee_frame_names
         rmodel = self.rmodel 
-        if self.rmodel.name == 'solo':
+        if self.rmodel.type == 'QUADRUPED':
             self.lfFootId = rmodel.getFrameId(ee_frame_names[0])
             self.rfFootId = rmodel.getFrameId(ee_frame_names[1])
             self.lhFootId = rmodel.getFrameId(ee_frame_names[2])
             self.rhFootId = rmodel.getFrameId(ee_frame_names[3])
-        # elif rmodel.name == 'bolt' or rmodel.name == 'bolt_humanoid':
-        elif rmodel.name == 'talos':
+        elif rmodel.name == 'HUMANOID':
             self.lfFootId = rmodel.getFrameId(ee_frame_names[0])
             self.rfFootId = rmodel.getFrameId(ee_frame_names[1])
 
@@ -55,10 +54,10 @@ class WholeBodyModel:
         weight = self.task_weights['footTrack']['swing']
         nu = self.actuation.nu
         for task in swing_feet_tasks:
-            if self.rmodel.name == 'solo':
+            if self.rmodel.foot_type == 'POINT_FOOT':
                 frame_pose_residual = crocoddyl.ResidualModelFrameTranslation(self.state,
                                                         task[0], task[1].translation, nu)
-            elif self.rmodel.name == 'talos':
+            elif self.rmodel.foot_type == 'FLAT_FOOT':
                 frame_pose_residual = crocoddyl.ResidualModelFramePlacement(self.state, task[0], task[1], nu)                               
             foot_track = crocoddyl.CostModelResidual(self.state, frame_pose_residual)
             cost.addCost(self.rmodel.frames[task[0]].name + "_footTrack", foot_track, weight)
@@ -105,13 +104,13 @@ class WholeBodyModel:
             self.add_pseudo_impact_costs(support_feet_ids, self.postImpact)
         for frame_idx in support_feet_ids:
             R_cone_local = self.rdata.oMf[frame_idx].rotation.T.dot(self.Rsurf)
-            if rmodel.name == 'solo': 
+            if rmodel.foot_type == 'POINT_FOOT': 
                 support_contact = crocoddyl.ContactModel3D(self.state, frame_idx, np.array([0., 0., 0.]), 
                                                                               nu, np.array([0., 50.]))
                 cone = crocoddyl.FrictionCone(R_cone_local, self.mu, 4, True)
                 cone_residual = crocoddyl.ResidualModelContactFrictionCone(state, frame_idx, cone, nu)
 
-            elif rmodel.name == 'talos':
+            elif rmodel.foot_type == 'FLAT_FOOT':
                 support_contact = crocoddyl.ContactModel6D(self.state, frame_idx, pinocchio.SE3.Identity(),
                                                                               nu, np.array([0., 50.]))
                 cone = crocoddyl.WrenchCone(self.Rsurf, self.mu, np.array([0.1, 0.05]))
@@ -129,7 +128,7 @@ class WholeBodyModel:
         com_track = crocoddyl.CostModelResidual(self.state, com_activation, com_residual)
         cost.addCost("comTrack", com_track, self.task_weights['comTrack'])
 
-    def add_stat_ctrl_reg_costs(self, cost, preImpact):
+    def add_stat_ctrl_reg_costs(self, cost):
         nu = self.actuation.nu 
         stateWeights = np.array([0.]*3 + [500.]*3 +\
                       [0.01]*(self.rmodel.nv - 6) + \
@@ -189,19 +188,19 @@ class WholeBodyModel:
         
     def create_pace_models(self):
         rmodel, rdata = self.rmodel, self.rdata
-        robot_name = rmodel.name
+        robot_type = rmodel.type
         # Compute the current foot positions
         x0 = rmodel.defaultState
         q0 = x0[:rmodel.nq]
         pinocchio.forwardKinematics(rmodel, rdata, q0)
         pinocchio.updateFramePlacements(rmodel, rdata)
-        if robot_name == 'solo':
+        if robot_type == 'QUADRUPED':
             rfFootPos0 = rdata.oMf[self.rfFootId].translation
             rhFootPos0 = rdata.oMf[self.rhFootId].translation
             lfFootPos0 = rdata.oMf[self.lfFootId].translation
             lhFootPos0 = rdata.oMf[self.lhFootId].translation
             self.comRef = (rfFootPos0 + rhFootPos0 + lfFootPos0 + lhFootPos0) / 4
-        elif self.rmodel.name == 'talos':
+        elif robot_type == 'HUMANOID':
             # print('yes')
             rfFootPos0 = rdata.oMf[self.rfFootId].translation
             lfFootPos0 = rdata.oMf[self.lfFootId].translation
@@ -212,10 +211,10 @@ class WholeBodyModel:
         loco3dModel = []
         for gait in self.gait_templates:
             for phase in gait:
-                if robot_name == 'solo' and phase == 'doubleSupport':
+                if robot_type == 'QUADRUPED' and phase == 'doubleSupport':
                     loco3dModel += self.createDoubleSupportFootstepModels([lfFootPos0, rfFootPos0, 
                                                                           lhFootPos0, rhFootPos0])
-                elif self.rmodel.name == 'talos' and phase == 'doubleSupport':
+                elif robot_type == 'HUMANOID' and phase == 'doubleSupport':
                     loco3dModel += self.createDoubleSupportFootstepModels([lfFootPos0, rfFootPos0])
                 elif phase == 'rfrhStep':
                     loco3dModel += self.createSingleSupportFootstepModels([rfFootPos0, rhFootPos0], 
@@ -257,19 +256,16 @@ class WholeBodyModel:
                                                                           lhFootPos0, rhFootPos0])
                 elif phase == 'rflfStep':
                     loco3dModel += self.createSingleSupportFootstepModels([rfFootPos0, lfFootPos0], 
-                                    [self.rhFootId, self.lhFootId], [self.rfFootId, self.lfFootId])
-                    # # add impact models
-                    # loco3dModel += self.add_impact_dynamics_costs                 
+                                    [self.rhFootId, self.lhFootId], [self.rfFootId, self.lfFootId])              
                 elif phase == 'rhlhStep':
                     loco3dModel += self.createSingleSupportFootstepModels([rhFootPos0, lhFootPos0], 
                                     [self.rfFootId, self.lfFootId], [self.rhFootId, self.lhFootId])
         self.running_models = loco3dModel
 
     def createDoubleSupportFootstepModels(self, feetPos):
-        if self.rmodel.name == 'solo':
+        if self.rmodel.type == 'QUADRUPED':
             supportFeetIds = [self.lfFootId, self.rfFootId, self.lhFootId, self.rhFootId]
-        # elif self.rmodel.name == 'bolt' or self.rmodel.name == 'bolt_humanoid':
-        elif self.rmodel.name == 'talos':
+        elif self.rmodel.name == 'HUMANOID':
             supportFeetIds = [self.lfFootId, self.rfFootId]
         supportKnots = self.gait['supportKnots']
         doubleSupportModel = []
@@ -334,7 +330,7 @@ class WholeBodyModel:
         if swingFootTask is not None:
             self.add_swing_feet_tracking_costs(costModel, swingFootTask)
         self.add_support_contact_costs(contactModel, costModel, supportFootIds, forceTask)
-        self.add_stat_ctrl_reg_costs(costModel, preImpactTask)
+        self.add_stat_ctrl_reg_costs(costModel)
         # Creating the action model for the KKT dynamics with simpletic Euler integration scheme
         dmodel = crocoddyl.DifferentialActionModelContactFwdDynamics(self.state, self.actuation, 
                                                              contactModel, costModel, 0., True)

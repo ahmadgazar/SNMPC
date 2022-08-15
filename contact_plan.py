@@ -121,7 +121,7 @@ def create_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                                             'rflhStep', 'doubleSupport', 
                                             'lfrhStep', 'doubleSupport']]
       elif gait['type'] =='PACE':
-            if rmodel.name == 'solo':
+            if rmodel.type == 'QUADRUPDED':
                 for step in range (steps):
                     if step < steps-1:
                         gait_templates += [['doubleSupport', 'rfrhStep', 'doubleSupport', 'lflhStep']]
@@ -129,8 +129,7 @@ def create_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                         gait_templates += [['doubleSupport', 
                                             'rfrhStep', 'doubleSupport', 
                                             'lflhStep', 'doubleSupport']]
-            # elif rmodel.name == 'bolt' or rmodel.name == 'bolt_humanoid':
-            elif rmodel.name == 'talos':
+            elif rmodel.type == 'HUMANOID':
                 for step in range (steps):
                     if step < steps-1:
                         gait_templates += [['doubleSupport', 'rfStep', 'doubleSupport', 'lfStep']]
@@ -160,7 +159,7 @@ def create_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
       for gait in gait_templates:
             for phase in gait:
                   contact_sequence_k = []
-                  if rmodel.name == 'solo' and phase == 'doubleSupport':
+                  if rmodel.type == 'QUADRUPED' and phase == 'doubleSupport':
                     t_end = t_start + supportKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0], 
                                          y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
@@ -170,8 +169,7 @@ def create_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                                           y=hrFootPos[1], z=hrFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, x=hlFootPos[0],  
                                           y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
-                #   elif rmodel.name == 'bolt' or rmodel.name == 'bolt_humanoid' and phase == 'doubleSupport':
-                  elif rmodel.name == 'talos'  and phase == 'doubleSupport':
+                  elif rmodel.type == 'HUMANOID'  and phase == 'doubleSupport':
                     t_end = t_start + supportKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0], 
                                           y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
@@ -257,8 +255,9 @@ def create_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
                     frFootPos[0] += stepLength
                     flFootPos[0] += stepLength
-                    hrFootPos[0] += stepLength      
-                    hlFootPos[0] += stepLength 
+                    if rmodel.type == 'QUADRUPED':
+                        hrFootPos[0] += stepLength      
+                        hlFootPos[0] += stepLength 
                   t_start = t_end
                   contact_sequence += [contact_sequence_k] 
       return gait_templates, contact_sequence

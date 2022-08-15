@@ -1,6 +1,5 @@
 from utils import construct_friction_pyramid_constraint_matrix
 from contact_plan import create_contact_trajectory 
-from warnings import warn
 from casadi import *
 import numpy as np
 
@@ -36,23 +35,9 @@ class CentroidalModelCasadi:
         self._Cov_w = conf.cov_w  
         self._Cov_eta = conf.cov_white_noise                                                           
         # private methods
-        # self.__set_init_and_final_states(conf)
         self.__fill_contact_data(conf)
-        # self.__fill_initial_trajectory()
         self.__setup_casadi_dynamics_model()
-    
-    # private methods
-    # def __set_init_and_final_states(self, conf):
-    #     self._DYNAMICS_FIRST = conf.DYNAMICS_FIRST
-    #     if conf.DYNAMICS_FIRST:
-    #         self._com_z = conf.com_z
-    #         self._x_init = conf.x_init
-    #         self._x_final = conf.x_final   
-    #     else:
-    #         IK_to_Dyn = np.load('wholeBody_to_centroidal_traj.npz')['X']                             
-    #         self._x_init = IK_to_Dyn[0]
-    #         self._x_final = IK_to_Dyn[-1]
-   
+
     def __fill_contact_data(self, conf):
         contact_trajectory = create_contact_trajectory(conf)
         contacts_logic = []
@@ -86,27 +71,6 @@ class CentroidalModelCasadi:
                            contacts_orient=contacts_orientation, 
                             contacts_position=contacts_position)            
     
-    # def __fill_initial_trajectory(self):
-    #     N = self._N
-    #     init_trajectories = {'state':np.zeros((self._n_x, N+1)), 'control':np.zeros((self._n_u, N))}
-    #     if self._DYNAMICS_FIRST:
-    #         warn('currently kinematics first is only supported!')    
-    #         pass 
-    #     else:   
-    #         # warm-start SCP states using whole-body DDP
-    #         init_trajectories['state'] = np.array(np.load('wholeBody_to_centroidal_traj.npz')['X'])
-    #         # warm-start stochastic SCP controls 
-    #         robot_weight =  -self._m*self._g
-    #         contacts_logic_total = self._contact_data['contacts_logic']
-    #         for time_idx, contacts_logic_k in enumerate(contacts_logic_total):
-    #             robot_weight_per_contact = robot_weight/np.sum(contacts_logic_k)
-    #             for contact_idx, contact_logic in enumerate(contacts_logic_k):
-    #                 if contact_logic:
-    #                     fx_idx = contact_idx*3
-    #                     init_trajectories['control'][fx_idx:fx_idx+3, time_idx] = \
-    #                                np.array([1e-3, 1e-3, robot_weight_per_contact])
-    #     self._init_trajectories = init_trajectories
-
     def __setup_casadi_dynamics_model(self):
         m, g = self._m, self._g       
         # setup states & controls symbols
@@ -208,48 +172,3 @@ class CentroidalModelCasadi:
         self.casadi_model = model
         self.casadi_model_fcn = Function('f', [x, u, contact_data], [x + self._dt*f])
         self.casadi_model_const = Function('bla', [u, contact_data], [friction_pyramid_constraints.expr, lb, ub])
-
-#     # def test_casadi_dynamics(self)
-# if __name__ == "__main__":
-#     import conf_solo12_trot as conf
-#     from centroidal_model import Centroidal_model
-#     from constraints import construct_friction_pyramid_constraints
-#     import matplotlib.pylab as plt
-#     model_casadi = CentroidalModelCasadi(conf)
-#     model_jax = Centroidal_model(conf)
-#     contacts_logic_N = model_casadi._contact_data['contacts_logic']
-#     contacts_position_N = model_casadi._contact_data['contacts_position'] 
-#     contacts_norms_N = model_casadi._contact_data['contacts_orient']
-#     N = model_jax._N
-#     constraint_jax = construct_friction_pyramid_constraints(model_jax)
-#     for t_idx in range(N):
-#         contacts_logic_k = contacts_logic_N[t_idx]
-#         contacts_position_k = contacts_position_N[t_idx]
-#         contacts_norms_k = contacts_norms_N[t_idx].flatten()
-#         contact_params_k = np.concatenate([contacts_logic_k, contacts_position_k, contacts_norms_k])
-#         x = model_casadi._init_trajectories['state'][t_idx, :]
-#         u = model_casadi._init_trajectories['control'][:, t_idx]
-#         # casadi stuff
-#         f_casadi = model_casadi.casadi_model_fcn(x, u, contact_params_k)
-#         A_casadi, lb_casadi, ub_casadi = model_casadi.casadi_model_const(u, contact_params_k)
-#         # jax stuff
-#         f_jax = model_jax.integrate_model_one_step(x, u, contacts_position_k, 
-#                                        contacts_logic_k, contacts_norms_N[0])
-#         nx, nu = model_jax._n_x, model_jax._n_u
-#         A_FR = constraint_jax.mat[t_idx*5:(t_idx*5)+5, (N+1)*nx + nu*t_idx:((N+1)*nx + nu*t_idx)+nu]
-#         A_FL = constraint_jax.mat[N*5+t_idx*5:(N*5+t_idx*5)+5, (N+1)*nx + nu*t_idx:((N+1)*nx + nu*t_idx)+nu]
-#         A_HR = constraint_jax.mat[2*N*5 +t_idx*5:(2*N*5+t_idx*5)+5, (N+1)*nx + nu*t_idx:((N+1)*nx + nu*t_idx)+nu]
-#         A_HL = constraint_jax.mat[3*N*5+ t_idx*5:(3*N*5+t_idx*5)+5, (N+1)*nx + nu*t_idx:((N+1)*nx + nu*t_idx)+nu]
-#         A_jax = np.concatenate([A_FR, A_FL, A_HR, A_HL], axis=0)
-#         for i in range(f_jax.shape[0]):
-#             if(np.allclose(f_jax[i], np.array(f_casadi)[i])):
-#                 continue
-#             else:
-#                 print('ffffffffuuuuack dynamically wrong!')
-#         # print('A_jax = ', A_jax)
-#         # print('A_casadi = ', A_casadi)             
-#         if np.allclose(np.array(A_casadi), A_jax):
-#             continue
-#         else:
-#             print('ffffffffuuuuack constraints are wrong!')
-
