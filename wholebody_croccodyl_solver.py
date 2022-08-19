@@ -69,15 +69,18 @@ class WholeBodyDDPSolver:
     def add_terminal_cost(self):
         wbd_model = self.whole_body_model
         final_contact_sequence = wbd_model.contact_sequence[-1]
-        feetPos = [final_contact_sequence[1].pose.translation, 
-                   final_contact_sequence[0].pose.translation,
-                   final_contact_sequence[3].pose.translation, 
-                   final_contact_sequence[2].pose.translation] 
-        if wbd_model.rmodel.name == 'solo':
+
+        if wbd_model.rmodel.type == 'QUADRUPED':
             supportFeetIds = [wbd_model.lfFootId, wbd_model.rfFootId, 
                               wbd_model.lhFootId, wbd_model.rhFootId]
-        elif wbd_model.rmodel.name == 'talos':
+            feetPos = [final_contact_sequence[1].pose.translation, 
+                       final_contact_sequence[0].pose.translation,
+                       final_contact_sequence[3].pose.translation, 
+                       final_contact_sequence[2].pose.translation]
+        elif wbd_model.rmodel.type == 'HUMANOID':
             supportFeetIds = [wbd_model.lfFootId, wbd_model.rfFootId]   
+            feetPos = [final_contact_sequence[1].pose.translation, 
+                       final_contact_sequence[0].pose.translation]
         swingFootTask = []
         for i, p in zip(supportFeetIds, feetPos):
             swingFootTask += [[i, pinocchio.SE3(np.eye(3), p)]]

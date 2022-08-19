@@ -1,5 +1,6 @@
 from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
 import scipy.linalg as la
+from casadi import *
 import numpy as np
 import time 
 
@@ -58,7 +59,7 @@ class CentroidalSolverAcados:
         acados_model.p = self.casadi_model.p
         self.acados_model = acados_model
 
-    def __fill_init_params(self): self.ocp.parameter_values = np.zeros(52)
+    def __fill_init_params(self): self.ocp.parameter_values = np.zeros(self.casadi_model.p.shape[0])
     
     def __fill_ocp_cost(self):
         ny, nx, nu = self.ny, self.nx, self.nu 
@@ -90,15 +91,21 @@ class CentroidalSolverAcados:
             self.ocp.constraints.x0 = self.x_init[0] 
             # terminal constraints
             x_goal = self.x_init[-1]
-            print(x_goal)
             self.ocp.constraints.idxbx_e = np.array(range(self.nx))
             self.ocp.constraints.lbx_e = x_goal 
             self.ocp.constraints.ubx_e = x_goal        
-        # friction pyramid constraints
-        self.ocp.model.con_h_expr = self.casadi_model.friction_pyramid_constraints.expr
-        self.ocp.constraints.lh = self.casadi_model.friction_pyramid_constraints.lb 
-        self.ocp.constraints.uh = self.casadi_model.friction_pyramid_constraints.ub 
-
+        if self.casadi_model.model_name == 'centroidal_momentum_quadruped':
+            self.ocp.model.con_h_expr = self.casadi_model.friction_pyramid_constraints.expr
+            self.ocp.constraints.lh = self.casadi_model.friction_pyramid_constraints.lb 
+            self.ocp.constraints.uh = self.casadi_model.friction_pyramid_constraints.ub
+        elif self.casadi_model.model_name == 'centroidal_momentum_flat_foot_humanoid':
+            self.ocp.model.con_h_expr = vertcat(self.casadi_model.friction_pyramid_constraints.expr,
+                                                self.casadi_model.cop_constraints.expr)
+            self.ocp.constraints.lh = np.concatenate([self.casadi_model.friction_pyramid_constraints.lb,
+                                                      self.casadi_model.cop_constraints.lb])    
+            self.ocp.constraints.uh = np.concatenate([self.casadi_model.friction_pyramid_constraints.ub,
+                                                      self.casadi_model.cop_constraints.ub]) 
+                                     
     def __fill_ocp_solver_settings(self):
         if self.RECEEDING_HORIZON:
             N = self.N_mpc

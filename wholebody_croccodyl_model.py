@@ -19,6 +19,9 @@ class WholeBodyModel:
         self.N = conf.N
         self.N_mpc = conf.N_mpc_wbd
         self.Rsurf = np.eye(3)
+        if conf.rmodel.foot_type == 'FLAT_FOOT':
+            self.foot_size = np.array([conf.lxp-conf.lxn,
+                                       conf.lyp-conf.lyn])
         self.__initialize_robot(conf.q0)
         self.__set_contact_frame_names_and_indices()
         self.__fill_ocp_models()
@@ -39,7 +42,7 @@ class WholeBodyModel:
             self.rfFootId = rmodel.getFrameId(ee_frame_names[1])
             self.lhFootId = rmodel.getFrameId(ee_frame_names[2])
             self.rhFootId = rmodel.getFrameId(ee_frame_names[3])
-        elif rmodel.name == 'HUMANOID':
+        elif rmodel.type == 'HUMANOID':
             self.lfFootId = rmodel.getFrameId(ee_frame_names[0])
             self.rfFootId = rmodel.getFrameId(ee_frame_names[1])
 
@@ -105,20 +108,24 @@ class WholeBodyModel:
         for frame_idx in support_feet_ids:
             R_cone_local = self.rdata.oMf[frame_idx].rotation.T.dot(self.Rsurf)
             if rmodel.foot_type == 'POINT_FOOT': 
-                support_contact = crocoddyl.ContactModel3D(self.state, frame_idx, np.array([0., 0., 0.]), 
-                                                                              nu, np.array([0., 50.]))
+                support_contact = crocoddyl.ContactModel3D(state, frame_idx, np.array([0., 0., 0.]), 
+                                                                           nu, np.array([0., 50.]))
                 cone = crocoddyl.FrictionCone(R_cone_local, self.mu, 4, True)
                 cone_residual = crocoddyl.ResidualModelContactFrictionCone(state, frame_idx, cone, nu)
-
             elif rmodel.foot_type == 'FLAT_FOOT':
-                support_contact = crocoddyl.ContactModel6D(self.state, frame_idx, pinocchio.SE3.Identity(),
+                # friction cone
+                support_contact = crocoddyl.ContactModel6D(state, frame_idx, pinocchio.SE3.Identity(),
                                                                               nu, np.array([0., 50.]))
-                cone = crocoddyl.WrenchCone(self.Rsurf, self.mu, np.array([0.1, 0.05]))
-                cone_residual = crocoddyl.ResidualModelContactWrenchCone(self.state, frame_idx, cone, nu)
-    
-            contact_model.addContact(rmodel.frames[frame_idx].name + "_contact", support_contact)
-            cone_activation = crocoddyl.ActivationModelQuadraticBarrier(\
-                            crocoddyl.ActivationBounds(cone.lb, cone.ub))
+                cone = crocoddyl.WrenchCone(self.Rsurf, self.mu, np.array([self.foot_size[0], self.foot_size[1]]))
+                cone_residual = crocoddyl.ResidualModelContactWrenchCone(state, frame_idx, cone, nu)
+                # CoP
+                cop_box = crocoddyl.CoPSupport(self.Rsurf, self.foot_size)
+                cop_residual = crocoddyl.ResidualModelContactCoPPosition(state, frame_idx, cop_box, nu)
+                cop_activation = crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(cop_box.lb, cop_box.ub))
+                cop = crocoddyl.CostModelResidual(state, cop_activation, cop_residual)
+                cost.addCost(rmodel.frames[frame_idx].name + "_cop", cop, self.task_weights['cop'])
+            contact_model.addContact(rmodel.frames[frame_idx].name + "_contact", support_contact) 
+            cone_activation = crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(cone.lb, cone.ub))
             friction_cone = crocoddyl.CostModelResidual(state, cone_activation, cone_residual)
             cost.addCost(rmodel.frames[frame_idx].name + "_frictionCone", friction_cone, frictionConeWeight)
     
@@ -190,7 +197,7 @@ class WholeBodyModel:
         rmodel, rdata = self.rmodel, self.rdata
         robot_type = rmodel.type
         # Compute the current foot positions
-        x0 = rmodel.defaultState
+        x0 = self.x0
         q0 = x0[:rmodel.nq]
         pinocchio.forwardKinematics(rmodel, rdata, q0)
         pinocchio.updateFramePlacements(rmodel, rdata)
@@ -265,7 +272,7 @@ class WholeBodyModel:
     def createDoubleSupportFootstepModels(self, feetPos):
         if self.rmodel.type == 'QUADRUPED':
             supportFeetIds = [self.lfFootId, self.rfFootId, self.lhFootId, self.rhFootId]
-        elif self.rmodel.name == 'HUMANOID':
+        elif self.rmodel.type == 'HUMANOID':
             supportFeetIds = [self.lfFootId, self.rfFootId]
         supportKnots = self.gait['supportKnots']
         doubleSupportModel = []

@@ -42,7 +42,6 @@ n_u_per_contact = 3
 nb_contacts = 4
 n_u = nb_contacts*n_u_per_contact
 n_x = 9
-n_t = 1 # slack dimension
 
 q0 = np.array(Solo12Config.initial_configuration.copy())
 q0[0] = 0.0
