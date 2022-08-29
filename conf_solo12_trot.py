@@ -6,24 +6,23 @@ import pinocchio
 
 # walking parameters:
 # -------------------
-DYNAMICS_FIRST = False
 dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'TROT',
       'stepLength' : 0.12,
       'stepHeight' : 0.05,
       'stepKnots' : 15,
-      'supportKnots' : 3,
+      'supportKnots' : 5,
       'nbSteps': 5}
 
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
 # --------------------------
-robot_name = 'solo12'
 ee_frame_names = ['FL_FOOT', 'FR_FOOT', 'HL_FOOT', 'HR_FOOT']
 robot = example_robot_data.load('solo12')
 rmodel = robot.model
+robot_name = 'solo12'
 rmodel.type = 'QUADRUPED'
 rmodel.foot_type = 'POINT_FOOT'
 rdata = rmodel.createData()
@@ -50,8 +49,8 @@ gait_templates, contact_sequence = create_contact_sequence(dt, gait, ee_frame_na
 # planning and control horizon lengths:
 # -------------------------------------
 N = int(round(contact_sequence[-1][0].t_end/dt, 2))
-N_mpc = 90#int(round(contact_sequence[2][0].t_end/dt, 2))
-N_mpc_wbd = 40
+N_mpc = (gait['stepKnots'] + (gait['supportKnots']))*4
+N_mpc_wbd = int(round(N_mpc/2, 2))
 N_ctrl = int((N-1)*(dt/dt_ctrl))    
 # LQR gains (for stochastic control)      
 # ----------------------------------
@@ -87,15 +86,23 @@ control_cost_weights = np.diag([5e0, 1e0, 1e0,
                                 5e0, 1e0, 1e0,
                                 5e0, 1e0, 1e0])
 # whole-body cost objective weights:
-# # ----------------------------------         
-whole_body_task_weights = {'footTrack':{'swing':1e7, 'impact':1e7}, 'impulseVel':1e6, 'comTrack':1e5, 'stateBounds':0e3, 
-                            'stateReg':{'stance':1e-1, 'impact':1e0}, 'ctrlReg':{'stance':1e-3, 'impact':1e-2}, 'frictionCone':20,
-                            'centroidalTrack': 1e4, 'contactForceTrack':1e2}                                        
-# SCP solver parameters:
-# --------------------- 
-scp_params  = {'trust_region_radius0':  100, 'omega0': 100, 'omega_max': 1e10, 'epsilon': 1e-6, 'rho0': 0.4,
-                'rho1': 1.5, 'beta_succ': 2., 'beta_fail': 0.5, 'gamma_fail': 5, 'convergence_threshold': 1e-3, 'max_iterations': 20}
+# # ---------------------------------- 
+freeFlyerQWeight = [0.]*3 + [500.]*3
+freeFlyerVWeight = [10.]*6
+legsQWeight = [0.01]*(rmodel.nv - 6)
+legsWWeights = [1.]*(rmodel.nv - 6)
+wbd_state_reg_weights = np.array(
+      freeFlyerQWeight + legsQWeight + freeFlyerVWeight + legsWWeights
+      )         
 
+whole_body_task_weights = {
+                            'swingFoot':{'preImpact':{'position':1e7,'velocity':0e1}, 
+                                            'impact':{'position':1e7,'velocity':5e5}
+                                           }, 
+                            'comTrack':1e5, 'stateBounds':1e3, 'centroidalTrack': 1e4, 
+                            'stateReg':{'stance':1e-1, 'impact':1e0}, 'ctrlReg':{'stance':1e-3, 'impact':1e-2}, 
+                            'frictionCone':20, 'contactForceTrack':100
+                            }                                                                        
 # Gepetto viewer:
 cameraTF = [2., 2.68, 0.84, 0.2, 0.62, 0.72, 0.22]
 WITHDISPLAY = True

@@ -13,6 +13,7 @@ class WholeBodyModel:
         self.contact_sequence = conf.contact_sequence
         self.gait_templates = conf.gait_templates 
         self.task_weights = conf.whole_body_task_weights
+        self.state_reg_weights = conf.wbd_state_reg_weights
         # Defining the friction coefficient and normal
         self.postImpact = None
         self.mu = conf.mu
@@ -54,57 +55,59 @@ class WholeBodyModel:
         self.actuation = crocoddyl.ActuationModelFloatingBase(self.state)
 
     def add_swing_feet_tracking_costs(self, cost, swing_feet_tasks):
-        weight = self.task_weights['footTrack']['swing']
-        nu = self.actuation.nu
+        swingFootPosWeight = self.task_weights['swingFoot']['preImpact']['position']
+        swingFootVelWeight = self.task_weights['swingFoot']['preImpact']['velocity']
+        state, nu = self.state, self.actuation.nu
         for task in swing_feet_tasks:
             if self.rmodel.foot_type == 'POINT_FOOT':
-                frame_pose_residual = crocoddyl.ResidualModelFrameTranslation(self.state,
+                frame_pose_residual = crocoddyl.ResidualModelFrameTranslation(state,
                                                         task[0], task[1].translation, nu)
             elif self.rmodel.foot_type == 'FLAT_FOOT':
-                frame_pose_residual = crocoddyl.ResidualModelFramePlacement(self.state, task[0], task[1], nu)                               
-            foot_track = crocoddyl.CostModelResidual(self.state, frame_pose_residual)
-            cost.addCost(self.rmodel.frames[task[0]].name + "_footTrack", foot_track, weight)
+                frame_pose_residual = crocoddyl.ResidualModelFramePlacement(state, task[0], task[1], nu)
+            verticalFootVelResidual = crocoddyl.ResidualModelFrameVelocity(state, task[0],
+                    pinocchio.Motion.Zero(), pinocchio.ReferenceFrame.LOCAL_WORLD_ALIGNED, nu
+                    )
+            verticalFootVelAct = crocoddyl.ActivationModelWeightedQuad(np.array([0, 0, 1, 0, 0, 0]))
+            verticalFootVelCost = crocoddyl.CostModelResidual(state, verticalFootVelAct, 
+                                                                verticalFootVelResidual)
+            cost.addCost(self.rmodel.frames[task[0]].name+  "__footVelTrack", verticalFootVelCost, 
+                                                                                swingFootVelWeight)                               
+            foot_track = crocoddyl.CostModelResidual(state, frame_pose_residual)
+            cost.addCost(self.rmodel.frames[task[0]].name + "_footPosTrack", foot_track, 
+                                                                     swingFootPosWeight)
     
-    def add_pseudo_impact_costs(self, support_feet_ids, swing_feet_tasks):
+    def add_pseudo_impact_costs(self, cost, swing_feet_tasks):
         state, nu = self.state, self.actuation.nu
-        foot_pos_weight = self.task_weights['footTrack']['impact']
-        foot_impact_weight = self.task_weights['impulseVel']
-        # contactModel = crocoddyl.ContactModelMultiple(state, nu)
-        # Creating the cost model for a contact phase
-        costModel = crocoddyl.CostModelSum(state, nu)
+        footPosImpactWeight = self.task_weights['swingFoot']['impact']['position']
+        footVelImpactweight = self.task_weights['swingFoot']['impact']['velocity']
         for task in swing_feet_tasks:
             frameTranslationResidual = crocoddyl.ResidualModelFrameTranslation(state, 
                                                     task[0], task[1].translation, nu)
             frameVelocityResidual = crocoddyl.ResidualModelFrameVelocity(state, task[0], 
-                                             pinocchio.Motion.Zero(), pinocchio.LOCAL, nu)
-            footTrack = crocoddyl.CostModelResidual(state, frameTranslationResidual)
-            impulseFootVelCost = crocoddyl.CostModelResidual(state, frameVelocityResidual)
-            costModel.addCost(self.rmodel.frames[task[0]].name + "_footTrack", footTrack, foot_pos_weight)
-            costModel.addCost(self.rmodel.frames[task[0]].name + "_impulseVel",
-                                impulseFootVelCost, foot_impact_weight)                                                 
+                                           pinocchio.Motion.Zero(), pinocchio.LOCAL, nu)                          
+            footPosImpactCost = crocoddyl.CostModelResidual(state, frameTranslationResidual)
+            footVelImpactCost = crocoddyl.CostModelResidual(state, frameVelocityResidual)
+            cost.addCost(self.rmodel.frames[task[0]].name + "_footPosImpact",
+                                           footPosImpactCost, footPosImpactWeight)
+            cost.addCost(self.rmodel.frames[task[0]].name + "_footVelImpact", 
+                                           footVelImpactCost, footVelImpactweight)
+        if self.rmodel.foot_type == 'FLAT_FOOT':
+            # keep feet horizontal at the time of impact
+            for task in swing_feet_tasks:
+                footRotImpactWeight = self.task_weights['swingFoot']['impact']['orientation']
+                frameRotResidual = crocoddyl.ResidualModelFrameRotation(state, task[0], np.eye(3), nu)
+                frameRotAct = crocoddyl.ActivationModelWeightedQuad(np.array([1, 1, 0]))
+                footRotImpactCost = crocoddyl.CostModelResidual(state,frameRotAct , frameRotResidual) 
+                cost.addCost(self.rmodel.frames[task[0]].name + "_footRotImpact",
+                                            footRotImpactCost, footRotImpactWeight)                                                                                     
 
-    def add_swing_feet_impact_costs(self, cost, swing_feet_tasks):
-        nu = self.actuation.nu
-        foot_pos_weight = self.task_weights['footTrack']['impact']
-        foot_impact_weight = self.task_weights['impulseVel']
-        for i in swing_feet_tasks:
-            frameTranslationResidual = crocoddyl.ResidualModelFrameTranslation(self.state, 
-                                                               i[0], i[1].translation, nu)
-            frameVelocityResidual = crocoddyl.ResidualModelFrameVelocity(self.state, i[0], 
-                                             pinocchio.Motion.Zero(), pinocchio.LOCAL, nu)
-            footTrack = crocoddyl.CostModelResidual(self.state, frameTranslationResidual)
-            impulseFootVelCost = crocoddyl.CostModelResidual(self.state, frameVelocityResidual)
-            cost.addCost(self.rmodel.frames[i[0]].name + "_footTrack", footTrack, foot_pos_weight)
-            cost.addCost(self.rmodel.frames[i[0]].name + "_impulseVel",
-                                impulseFootVelCost, foot_impact_weight)
-
-    def add_support_contact_costs(self, contact_model, cost, support_feet_ids, forceTask=None):
+    def add_support_contact_costs(self, contact_model, cost, support_feet_ids):
         state, nu = self.state, self.actuation.nu
         rmodel = self.rmodel
         frictionConeWeight = self.task_weights['frictionCone']
         # check if it's a post-impact knot
         if self.postImpact is not None:
-            self.add_pseudo_impact_costs(support_feet_ids, self.postImpact)
+            self.add_pseudo_impact_costs(cost, self.postImpact)
         for frame_idx in support_feet_ids:
             R_cone_local = self.rdata.oMf[frame_idx].rotation.T.dot(self.Rsurf)
             if rmodel.foot_type == 'POINT_FOOT': 
@@ -121,11 +124,15 @@ class WholeBodyModel:
                 # CoP
                 cop_box = crocoddyl.CoPSupport(self.Rsurf, self.foot_size)
                 cop_residual = crocoddyl.ResidualModelContactCoPPosition(state, frame_idx, cop_box, nu)
-                cop_activation = crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(cop_box.lb, cop_box.ub))
+                cop_activation = crocoddyl.ActivationModelQuadraticBarrier(
+                    crocoddyl.ActivationBounds(cop_box.lb, cop_box.ub)
+                    )
                 cop = crocoddyl.CostModelResidual(state, cop_activation, cop_residual)
                 cost.addCost(rmodel.frames[frame_idx].name + "_cop", cop, self.task_weights['cop'])
             contact_model.addContact(rmodel.frames[frame_idx].name + "_contact", support_contact) 
-            cone_activation = crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(cone.lb, cone.ub))
+            cone_activation = crocoddyl.ActivationModelQuadraticBarrier(
+                crocoddyl.ActivationBounds(cone.lb, cone.ub)
+                )
             friction_cone = crocoddyl.CostModelResidual(state, cone_activation, cone_residual)
             cost.addCost(rmodel.frames[frame_idx].name + "_frictionCone", friction_cone, frictionConeWeight)
     
@@ -137,9 +144,7 @@ class WholeBodyModel:
 
     def add_stat_ctrl_reg_costs(self, cost):
         nu = self.actuation.nu 
-        stateWeights = np.array([0.]*3 + [500.]*3 +\
-                      [0.01]*(self.rmodel.nv - 6) + \
-              [10.]*6 + [1.]*(self.rmodel.nv - 6))
+        stateWeights = self.state_reg_weights
         if self.postImpact is not None:
             state_reg_weight, control_reg_weight = self.task_weights['stateReg']['impact'],\
                                                     self.task_weights['ctrlReg']['impact']
@@ -281,8 +286,7 @@ class WholeBodyModel:
             for i, p in zip(supportFeetIds, feetPos):
                 swingFootTask += [[i, pinocchio.SE3(np.eye(3), p)]]
           
-            doubleSupportModel += [self.createSwingFootModel(supportFeetIds, 
-                                               swingFootTask=swingFootTask)]               
+            doubleSupportModel += [self.createSwingFootModel(supportFeetIds, swingFootTask=swingFootTask)]               
         return doubleSupportModel
 
     def createSingleSupportFootstepModels(self, feetPos0, supportFootIds, swingFootIds):
@@ -308,16 +312,13 @@ class WholeBodyModel:
                 tref = p + dp
                 swingFootTask += [[i, pinocchio.SE3(np.eye(3), tref)]]  
             comTask = np.array([stepLength * (k + 1) / numKnots, 0., 0.]) * comPercentage + self.comRef
-            centroidalTask = None
-            forceTask = None
             # postImpact = False 
             if k == numKnots-1:
                 self.postImpact = swingFootTask
             else:
                 self.postImpact = None    
             footSwingModel += [
-                self.createSwingFootModel(supportFootIds, preImpactTask=False, comTask=comTask, 
-                        centroidalTask=centroidalTask, swingFootTask=swingFootTask, forceTask=forceTask)
+                self.createSwingFootModel(supportFootIds, comTask=comTask, swingFootTask=swingFootTask)
                     ]
         # Updating the current foot position for next step
         self.comRef += [stepLength * comPercentage, 0., 0.]
@@ -325,8 +326,7 @@ class WholeBodyModel:
             p += [stepLength, 0., 0.] 
         return footSwingModel 
 
-    def createSwingFootModel(self, supportFootIds, preImpactTask=False, comTask=None, 
-                            centroidalTask=None, swingFootTask=None, forceTask=None):
+    def createSwingFootModel(self, supportFootIds, comTask=None, swingFootTask=None):
         # Creating a multi-contact model
         nu = self.actuation.nu
         contactModel = crocoddyl.ContactModelMultiple(self.state, nu)
@@ -336,11 +336,12 @@ class WholeBodyModel:
             self.add_com_position_tracking_cost(costModel, comTask)
         if swingFootTask is not None:
             self.add_swing_feet_tracking_costs(costModel, swingFootTask)
-        self.add_support_contact_costs(contactModel, costModel, supportFootIds, forceTask)
+        self.add_support_contact_costs(contactModel, costModel, supportFootIds)
         self.add_stat_ctrl_reg_costs(costModel)
         # Creating the action model for the KKT dynamics with simpletic Euler integration scheme
-        dmodel = crocoddyl.DifferentialActionModelContactFwdDynamics(self.state, self.actuation, 
-                                                             contactModel, costModel, 0., True)
+        dmodel = crocoddyl.DifferentialActionModelContactFwdDynamics(
+            self.state, self.actuation, contactModel, costModel, 0., True
+            )
         model = crocoddyl.IntegratedActionModelEuler(dmodel, self.dt)
         return model
 
@@ -413,11 +414,11 @@ class WholeBodyModel:
         for i in range(N_outer_u-1):
             dtau = (tau[i+1] - tau[i])/float(N_inner)
             #TODO find more elegant way to interpolate LQR gains 
-            dgains = (gains[i+1]-gains[i])/float(N_inner)
+            #for now they are scaled inside the simulation loop 
             for j in range(N_inner):
                 k = i*N_inner + j
                 tau_interpol[k] = tau[i] + j*dtau
-                gains_interpol[k] = gains[i,:,:] #+j*dgains
+                gains_interpol[k] = gains[i,:,:]*(self.dt_ctrl/N_inner)
         for i in range(N_outer_x-1):
             dx = (x[i+1] - x[i])/float(N_inner)
             # dqddot = (qddot[i+1] - qddot[i])/float(N_inner)

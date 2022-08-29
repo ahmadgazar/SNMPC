@@ -26,6 +26,10 @@ class CentroidalSolverAcados:
         self.nx = self.acados_model.x.size()[0]
         self.nu = self.acados_model.u.size()[0]
         self.ny = self.nx + self.nu
+        if model._robot_type == 'QUADRUPED':
+            self.nb_contacts = 4
+        elif model._robot_type == 'HUMANOID':
+            self.nb_contacts = 2    
         # create optimal control problem
         self.ocp = AcadosOcp()
         self.ocp.model = self.acados_model
@@ -99,13 +103,16 @@ class CentroidalSolverAcados:
             self.ocp.constraints.lh = self.casadi_model.friction_pyramid_constraints.lb 
             self.ocp.constraints.uh = self.casadi_model.friction_pyramid_constraints.ub
         elif self.casadi_model.model_name == 'centroidal_momentum_flat_foot_humanoid':
-            self.ocp.model.con_h_expr = vertcat(self.casadi_model.friction_pyramid_constraints.expr,
-                                                self.casadi_model.cop_constraints.expr)
-            self.ocp.constraints.lh = np.concatenate([self.casadi_model.friction_pyramid_constraints.lb,
-                                                      self.casadi_model.cop_constraints.lb])    
-            self.ocp.constraints.uh = np.concatenate([self.casadi_model.friction_pyramid_constraints.ub,
-                                                      self.casadi_model.cop_constraints.ub]) 
-                                     
+            self.ocp.model.con_h_expr = vertcat(
+                self.casadi_model.friction_pyramid_constraints.expr, self.casadi_model.cop_constraints.expr
+                )
+            self.ocp.constraints.lh = np.concatenate(
+                [self.casadi_model.friction_pyramid_constraints.lb, self.casadi_model.cop_constraints.lb]
+                )    
+            self.ocp.constraints.uh = np.concatenate(
+                [self.casadi_model.friction_pyramid_constraints.ub, self.casadi_model.cop_constraints.ub]
+                ) 
+
     def __fill_ocp_solver_settings(self):
         if self.RECEEDING_HORIZON:
             N = self.N_mpc
@@ -150,20 +157,23 @@ class CentroidalSolverAcados:
         # self.ocp.solver_options.qp_solver_iter_max = 10
 
     def __generate_mpc_refs(self):
-        N_mpc = self.N_mpc
+        nb_contacts, N_mpc = self.nb_contacts, self.N_mpc
         self.x_ref_mpc = self.x_init[:self.N_traj+1]
-        contacts_logic_final = self.contact_data['contacts_logic'][-1].reshape(1, 4)
-        contacts_position_final = self.contact_data['contacts_position'][-1].reshape(1, 12)
-        contacts_orient_final = self.contact_data['contacts_orient'][-1].reshape(1, 4, 3, 3)
+        contacts_logic_final = self.contact_data['contacts_logic'][-1].reshape(1, nb_contacts)
+        contacts_position_final = self.contact_data['contacts_position'][-1].reshape(1, nb_contacts*3)
+        contacts_orient_final = self.contact_data['contacts_orient'][-1].reshape(1, nb_contacts, 3, 3)
         x_ref_mpc_final = self.x_ref_mpc[-1].reshape(1, self.nx)
         for _ in range(N_mpc):
             self.x_ref_mpc = np.concatenate([self.x_ref_mpc, x_ref_mpc_final], axis=0)
-            self.contact_data['contacts_logic'] = np.concatenate([self.contact_data['contacts_logic'], 
-                                                                       contacts_logic_final], axis=0)
-            self.contact_data['contacts_position'] = np.concatenate([self.contact_data['contacts_position'], 
-                                                                           contacts_position_final], axis=0)
-            self.contact_data['contacts_orient'] = np.concatenate([self.contact_data['contacts_orient'], 
-                                                                         contacts_orient_final], axis=0)
+            self.contact_data['contacts_logic'] = np.concatenate(
+                [self.contact_data['contacts_logic'], contacts_logic_final], axis=0
+                )
+            self.contact_data['contacts_position'] = np.concatenate(
+                [self.contact_data['contacts_position'], contacts_position_final], axis=0
+                )
+            self.contact_data['contacts_orient'] = np.concatenate(
+                [self.contact_data['contacts_orient'], contacts_orient_final], axis=0
+                )
     
     def __warm_start(self, x_ref_N):
         N_traj, N_mpc = self.N_traj, self.N_mpc
@@ -199,8 +209,9 @@ class CentroidalSolverAcados:
             contacts_logic_k = contacts_logic_N[mpc_time_idx]
             contacts_position_k = contacts_position_N[mpc_time_idx]
             contacts_norms_k = contacts_norms_N[mpc_time_idx].flatten()
-            contact_params_k = np.concatenate([contacts_logic_k,
-                            contacts_position_k, contacts_norms_k])            
+            contact_params_k = np.concatenate(
+                [contacts_logic_k,contacts_position_k, contacts_norms_k]
+                )            
             # update paramters and tracking cost
             solver.set(mpc_time_idx, 'p', contact_params_k)
             solver.cost_set(mpc_time_idx,'yref', y_ref_k)
@@ -261,8 +272,9 @@ class CentroidalSolverAcados:
                 contacts_logic_k = contacts_logic_N[mpc_time_idx]
                 contacts_position_k = contacts_position_N[mpc_time_idx]
                 contacts_norms_k = contacts_norms_N[mpc_time_idx].flatten()
-                contact_params_k = np.concatenate([contacts_logic_k,
-                             contacts_position_k, contacts_norms_k])            
+                contact_params_k = np.concatenate(
+                    [contacts_logic_k, contacts_position_k, contacts_norms_k]
+                    )            
                 # update paramters and tracking cost
                 solver.set(mpc_time_idx, 'p', contact_params_k)
                 solver.cost_set(mpc_time_idx,'yref', y_ref_k)
@@ -343,8 +355,9 @@ class CentroidalSolverAcados:
                 contacts_logic_k = contacts_logic_N[time_idx]
                 contacts_position_k = contacts_position_N[time_idx]
                 contacts_norms_k = contacts_norms_N[time_idx].flatten()
-                contact_params_k = np.concatenate([contacts_logic_k, 
-                             contacts_position_k, contacts_norms_k])            
+                contact_params_k = np.concatenate(
+                    [contacts_logic_k, contacts_position_k, contacts_norms_k]
+                    )            
                 solver.set(time_idx, 'p', contact_params_k)
                 solver.cost_set(time_idx,'yref', y_ref_k)
             # # set terminal references

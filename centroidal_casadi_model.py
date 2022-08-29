@@ -276,42 +276,4 @@ class CentroidalModelCasadi:
         model.cop_constraints = cop_constraints
         self.casadi_model = model
 
-if __name__ == "__main__":
-    from wholebody_croccodyl_model import WholeBodyModel
-    from wholebody_croccodyl_solver import WholeBodyDDPSolver
-    from centroidal_acados_solver import CentroidalSolverAcados
-    import matplotlib.pylab as plt
-    import conf_talos_full_with_locked_joints as conf
-    wbd_model = WholeBodyModel(conf)
-    ddp_planner = WholeBodyDDPSolver(wbd_model)
-    ddp_planner.solve()
-    sol_hg = np.asarray(ddp_planner.get_solution_trajectories()['centroidal'])
-    centroidal_model = CentroidalModelCasadi(conf)
-    centroidal_planner = CentroidalSolverAcados(centroidal_model, sol_hg)
-    X, U = centroidal_planner.solve()
-    fig, (comx, comy, comz, lx, ly, lz, kappax, kappay, kappaz) = plt.subplots(9, 1, sharex=True)
-    time = np.arange(0, np.round((X.shape[0])*conf.dt, 2), conf.dt)
-    comx.plot(time, X[:, 0])
-    comx.plot(time, sol_hg[:, 0])
-    comy.plot(time, X[:, 1])
-    comy.plot(time, sol_hg[:, 1])
-    comz.plot(time, X[:, 2])
-    comz.plot(time, sol_hg[:, 2])
-    lx.plot(time, X[:, 3])
-    lx.plot(time, sol_hg[:, 3])
-    ly.plot(time, X[:, 4])
-    ly.plot(time, sol_hg[:, 4])
-    lz.plot(time, X[:, 5])
-    lz.plot(time, sol_hg[:, 5])
-    kappax.plot(time, X[:, 6])
-    kappax.plot(time, sol_hg[:, 6])
-    kappay.plot(time, X[:, 7])
-    kappay.plot(time, sol_hg[:, 7])
-    kappaz.plot(time, X[:, 8])
-    kappaz.plot(time, sol_hg[:, 8])
-    plt.show()
-
-
-    
-
 

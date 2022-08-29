@@ -17,10 +17,14 @@ class WholeBodyDDPSolver:
         self.whole_body_model = model    
         # initial condition and warm-start
         self.x0 = model.x0
+        # extra tasks
+        self.centroidal_task = centroidalTask
+        self.force_task = forceTask
         # flags
         self.WARM_START = WARM_START
         self.RECEEDING_HORIZON = MPC
         # initialize ocp and create DDP solver
+        self.__add_tracking_tasks(centroidalTask, forceTask)
         self.__init_ocp_and_solver()
         if MPC:
             self.warm_start_mpc(centroidalTask, forceTask)
@@ -37,21 +41,32 @@ class WholeBodyDDPSolver:
             self.solver = crocoddyl.SolverFDDP(ocp)
             self.solver.setCallbacks([crocoddyl.CallbackLogger(),
                                     crocoddyl.CallbackVerbose()])     
-
+    
+    def __add_tracking_tasks(self, centroidalTask, forceTask):
+        if self.RECEEDING_HORIZON:
+            N = self.N_mpc 
+        else:
+            N = self.N_traj
+        running_models  = self.whole_body_model.running_models[:N]
+        # if centroidalTask is not None:
+        #     self.add_centroidal_costs(running_models, centroidalTask)
+        if forceTask is not None:
+            self.add_force_tracking_cost(running_models, forceTask)
+    
     def warm_start_mpc(self, centroidalTask, forceTask):
         print('\n'+'=' * 50)
         print('Warm-starting first WBD MPC iteration ..')
         print('-' * 50)
         N_mpc = self.N_mpc
         running_models_N = self.whole_body_model.running_models[:N_mpc]
-        if centroidalTask is not None:
-            centroidalTask_N = centroidalTask[:N_mpc]
-            self.add_centroidal_costs(running_models_N, centroidalTask_N)
+        # if centroidalTask is not None:
+        #     centroidalTask_N = centroidalTask[:N_mpc]
+        #     self.add_centroidal_costs(running_models_N, centroidalTask_N)
         if forceTask is not None:
             forceTask_N = forceTask[:N_mpc]
             self.add_force_tracking_cost(running_models_N, forceTask_N)    
         terminal_model = running_models_N[-1]
-        ocp = crocoddyl.ShootingProblem(self.x0, running_models_N,terminal_model)
+        ocp = crocoddyl.ShootingProblem(self.x0, running_models_N, terminal_model)
         solver = crocoddyl.SolverFDDP(ocp)
         solver.setCallbacks([crocoddyl.CallbackLogger(),
                           crocoddyl.CallbackVerbose()]) 
@@ -63,13 +78,20 @@ class WholeBodyDDPSolver:
         self.u_init = solver.us    
     
     def add_extended_horizon_mpc_models(self):
-        for _ in range(self.N_mpc):
-            self.whole_body_model.running_models += [self.add_terminal_cost()]  
+        N_mpc = self.N_mpc
+        for _ in range(N_mpc):
+            self.whole_body_model.running_models += [self.add_terminal_cost()]
+        if self.force_task is not None:
+            forceTaskTerminal_N = np.repeat(
+                self.force_task[-1].reshape(1, self.force_task[-1].shape[0]), N_mpc, axis=0
+                ) 
+            self.add_force_tracking_cost(
+                self.whole_body_model.running_models[self.N_mpc:], forceTaskTerminal_N 
+            )
 
     def add_terminal_cost(self):
         wbd_model = self.whole_body_model
         final_contact_sequence = wbd_model.contact_sequence[-1]
-
         if wbd_model.rmodel.type == 'QUADRUPED':
             supportFeetIds = [wbd_model.lfFootId, wbd_model.rfFootId, 
                               wbd_model.lhFootId, wbd_model.rhFootId]
@@ -84,9 +106,9 @@ class WholeBodyDDPSolver:
         swingFootTask = []
         for i, p in zip(supportFeetIds, feetPos):
             swingFootTask += [[i, pinocchio.SE3(np.eye(3), p)]]
-        terminalCostModel = wbd_model.createSwingFootModel(supportFeetIds, 
-                    swingFootTask=swingFootTask, comTask=wbd_model.comRef, 
-                                       centroidalTask=None,forceTask=None)
+        terminalCostModel = wbd_model.createSwingFootModel(
+            supportFeetIds, swingFootTask=swingFootTask, comTask=wbd_model.comRef
+            )
         return terminalCostModel
 
     def add_com_task(self, diff_cost, com_des):
@@ -175,27 +197,29 @@ class WholeBodyDDPSolver:
         pinocchio.framesForwardKinematics(rmodel, rdata, self.x0[:rmodel.nq])
         state, nu = wbd_model.state, wbd_model.actuation.nu        
         forceTrackWeight = wbd_model.task_weights['contactForceTrack']
-        if rmodel.name == 'solo':
+        if rmodel.foot_type == 'POINT_FOOT':
             nu_contact = 3
-        elif rmodel.name == 'talos':
+            linear_forces = force_des
+        elif rmodel.type == 'HUMANOIND' and rmodel.foot_type == 'FLAT_FOOT':
             nu_contact = 6
+            linear_forces = np.concatenate([force_des[2:5], force_des[8:11]])
         for frame_idx in support_feet_ids:
             # print("adding force tracking reference for contact id ", frame_idx)
             if frame_idx == wbd_model.rfFootId:
                 spatial_force_des = rdata.oMf[frame_idx].actInv(
-                    pinocchio.Force(force_des[0:3], np.zeros(3))
+                    pinocchio.Force(linear_forces[0:3], np.zeros(3))
                     )
             elif frame_idx == wbd_model.lfFootId:
                 spatial_force_des = rdata.oMf[frame_idx].actInv(
-                    pinocchio.Force(force_des[3:6], np.zeros(3))
+                    pinocchio.Force(linear_forces[3:6], np.zeros(3))
                     )
             elif frame_idx == wbd_model.rhFootId:
                 spatial_force_des = rdata.oMf[frame_idx].actInv(
-                    pinocchio.Force(force_des[6:9], np.zeros(3))
+                    pinocchio.Force(linear_forces[6:9], np.zeros(3))
                     )
             elif frame_idx == wbd_model.lhFootId:
                 spatial_force_des = rdata.oMf[frame_idx].actInv(
-                    pinocchio.Force(force_des[9:12], np.zeros(3))
+                    pinocchio.Force(linear_forces[9:12], np.zeros(3))
                     )
             force_activation_weights = np.array([1., 1., 1.])
             force_activation = crocoddyl.ActivationModelWeightedQuad(force_activation_weights)
@@ -271,23 +295,20 @@ class WholeBodyDDPSolver:
             # update initial condition
             self.x0 = self.solver.xs[1]
         return sol 
-
+   
     def interpolate_one_step(self, q, q_next, qdot, qdot_next, tau, tau_next):
+        nq, nv = len(q), len(qdot)
         N_interpol, rmodel = self.N_interpol, self.whole_body_model.rmodel
-        q_interpol = np.zeros((N_interpol, len(q)))
-        qdot_interpol = np.zeros((N_interpol, len(qdot)))
-        tau_intepol = np.zeros((N_interpol, len(tau)))
+        x_interpol = np.zeros((N_interpol, nq+nv))
+        tau_interpol = np.zeros((N_interpol, len(tau)))
         dtau = (tau_next - tau)/float(N_interpol)
-        dq = pinocchio.difference(rmodel,q, q_next)/float(N_interpol)
         dqdot = (qdot_next - qdot)/float(N_interpol)
-        for i in range(N_interpol):
-            qdot_interpol[i] = qdot + i*dqdot
-            tau_intepol[i] = tau + i*dtau 
-            if i == 0:
-                q_interpol[i] = q
-            else:
-                q_interpol[i] = pinocchio.integrate(rmodel, q_interpol[i-1], dq)   
-        return q_interpol, qdot_interpol, tau_intepol   
+        dt = self.dt_ctrl/self.dt
+        for interpol_idx in range(N_interpol):
+            tau_interpol[interpol_idx] = tau + interpol_idx*dtau 
+            x_interpol[interpol_idx, :nq] = pinocchio.interpolate(rmodel, q, q_next, interpol_idx*dt)
+            x_interpol[interpol_idx, nq:] = qdot + interpol_idx*dqdot        
+        return x_interpol, tau_interpol
 
     def interpolate_solution(self, solution):
         x, tau = solution['centroidal'], solution['jointTorques']
@@ -345,7 +366,11 @@ class WholeBodyDDPSolver:
             q, v = xs[time_idx][:nq], xs[time_idx][nq:]
             pinocchio.framesForwardKinematics(rmodel, rdata, q)
             pinocchio.computeCentroidalMomentum(rmodel, rdata, q, v)
-            centroidal_sol += [np.concatenate([pinocchio.centerOfMass(rmodel, rdata, q, v), np.array(rdata.hg)])]
+            centroidal_sol += [
+                np.concatenate(
+                    [pinocchio.centerOfMass(rmodel, rdata, q, v), np.array(rdata.hg)]
+                    )
+                    ]
             jointPos_sol += [q]
             jointVel_sol += [v]
             x += [xs[time_idx]]
@@ -356,4 +381,4 @@ class WholeBodyDDPSolver:
         sol = {'x':x, 'centroidal':centroidal_sol, 'jointPos':jointPos_sol, 
                           'jointVel':jointVel_sol, 'jointAcc':jointAcc_sol, 
                             'jointTorques':jointTorques_sol, 'gains':gains}        
-        return sol
+        return sol    
