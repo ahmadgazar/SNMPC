@@ -249,7 +249,7 @@ class WholeBodyDDPSolver:
             x0 = self.x0
             xs = [x0]*(solver.problem.T + 1)
             us = solver.problem.quasiStatic([x0]*solver.problem.T)
-            solver.solve(xs, us)    
+            solver.solve(xs, us, max_iter)    
     
     def update_ocp(self, time_idx, centroidalTask=None, forceTask=None):
         # update models
