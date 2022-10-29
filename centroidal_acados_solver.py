@@ -32,7 +32,7 @@ class CentroidalSolverAcados:
             self.nb_contacts = 2    
         # create optimal control problem
         self.ocp = AcadosOcp()
-        self.ocp.model = self.acados_model
+        self.ocp.model = self.acados_model  
         if MPC:
             self.ocp.dims.N = self.N_mpc
         else:

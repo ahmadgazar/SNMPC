@@ -1,5 +1,6 @@
 import numpy as np
 from casadi import *
+import casadi as ca
 #TODO change to jnp and jit
 
 """
@@ -111,3 +112,45 @@ def compute_norm_contact_slippage(contact_position):
       else:
         contact_dev_norm[time_idx] = slippage_norm
   return contact_dev_norm    
+
+
+def vec2sym_mat(vec, nx):
+    # nx = (vec.shape[0])
+
+    if isinstance(vec, np.ndarray):
+        mat = np.zeros((nx,nx))
+    else:
+        mat = ca.SX.zeros(nx,nx)
+
+    start_mat = 0
+    for i in range(nx):
+        end_mat = start_mat + (nx - i)
+        aux = vec[start_mat:end_mat]
+        mat[i,i:] = aux.T
+        mat[i:,i] = aux
+        start_mat += (nx-i)
+
+    return mat
+
+
+def sym_mat2vec(mat):
+    nx = mat.shape[0]
+
+    if isinstance(mat, np.ndarray):
+        vec = np.zeros((int((nx+1)*nx/2),))
+    else:
+        vec = ca.SX.zeros(int((nx+1)*nx/2))
+
+    start_mat = 0
+    for i in range(nx):
+        end_mat = start_mat + (nx - i)
+        vec[start_mat:end_mat] = mat[i:,i]
+        start_mat += (nx-i)
+
+    return vec
+
+def l1_permut_mat(nb_variables):
+    permut_mat = np.zeros((2**nb_variables, nb_variables))
+    for variable_idx in range(nb_variables):
+        permut_mat[:, variable_idx] = np.array([(-1)**(j//(2**variable_idx)) for j in range(2**(nb_variables))])
+    return permut_mat
