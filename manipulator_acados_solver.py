@@ -138,13 +138,12 @@ class ManipulatorSolverAcados:
         # cost type
         self.ocp.cost.cost_type = "LINEAR_LS"
         self.ocp.cost.cost_type_e = "LINEAR_LS"
-        # Linear least square end-effector cost
         self.ocp.cost.yref_e = np.zeros(nx)
         self.ocp.cost.yref = np.zeros(ny)
         self.ocp.cost.Vx_e = Vx_e
         self.ocp.cost.Vx = Vx
         self.ocp.cost.Vu = Vu
-    
+
     def __fill_ocp_solver_settings(self):
         if self.RECEEDING_HORIZON:
             N = self.N_mpc
@@ -160,8 +159,8 @@ class ManipulatorSolverAcados:
         ## ---------------------
         ##  NLP solver settings
         ## ---------------------
-        self.ocp.solver_options.nlp_solver_type = "SQP"
-        # self.ocp.solver_options.nlp_solver_type = "SQP_RTI"
+        # self.ocp.solver_options.nlp_solver_type = "SQP"
+        self.ocp.solver_options.nlp_solver_type = "SQP_RTI"
         self.ocp.solver_options.nlp_solver_tol_stat = 1e-6
         self.ocp.solver_options.nlp_solver_tol_eq = 1e-6
         self.ocp.solver_options.nlp_solver_tol_ineq = 1e-6
@@ -178,7 +177,7 @@ class ManipulatorSolverAcados:
         q = self.model.q 
         nx, nu = self.nx, self.nu
         x_limits, u_limits = self.x_limits, self.u_limits
-        P = ca.reshape(self.casadi_fwdDyn_model.p, (nx, nx))
+        # P = ca.reshape(self.casadi_fwdDyn_model.p, (nx, nx))
         # ----------------------------
         # Fwd dynamics NLP constraints
         # ----------------------------
@@ -199,43 +198,10 @@ class ManipulatorSolverAcados:
         self.ocp.constraints.ubu = u_limits
         self.ocp.constraints.lbu = -u_limits
         # end-effector constraint
-        # ee_constraints = ca.vertcat(
-        #     ca.norm_2(self.model.forwardKinematics(q)[1]),
-        #     ca.norm_2(self.model.forwardKinematics(q)[1]),
-        #     ca.norm_2(self.model.forwardKinematics(q)[1])
-        # )
-        x_obs = np.array(
-                        [[0.65-0.05, -0.05, 0.4+0.05],    #top left                          
-                         [0.65+0.05, -0.05, 0.4+0.05],    #top right
-                         [0.65-0.05, -0.05, 0.4-0.05],    #bottom left
-                         [0.65+0.05, -0.05, 0.4-0.05],    #bottom right
-                         ])
-        delta = 0.3                 
-        eta = norm.ppf(1-self.model.epsilon)
-        l1_constraint_mat = utils.l1_permut_mat(x_obs.shape[1])
-        nb_l1_constraints = l1_constraint_mat.shape[0]
-        expr = []
-        for constraint_nb in range(x_obs.shape[0]): 
-                expr = ca.vertcat(
-                    expr, 
-                    ca.norm_1(
-                        self.model.forwardKinematics(q)[1]-x_obs[constraint_nb]
-                        ) - delta
-                )
-                # expr = ca.vertcat(expr,
-                #     l1_constraint_mat @ (self.model.forwardKinematics(q)[1] - x_obs[constraint_nb]) - delta*np.ones(nb_l1_constraints)     
-                # )
-        self.ocp.model.con_h_expr = expr 
-        self.ocp.constraints.lh = np.zeros(expr.shape[0])
-        self.ocp.constraints.uh =  1e8*np.ones(expr.shape[0])
-        # print(ee_constraints.shape)
-        # for constraint_idx in range(con_h_expr.shape[0]):
-        #     constraint_i = con_h_expr[constraint_idx]
-        #     for j in range(nx):
-        #         constraint_i -= eta*ca.sqrt(constraint_i*P[j,j]*constraint_i)  
-        # self.ocp.model.con_h_expr = con_h_expr
-        # self.ocp.constraints.lh = np.array([0., 0., 0.])
-        # self.ocp.constraints.uh = np.array([100, 100, 100])
+        self.ocp.constraints.C = np.zeros((4, nx))
+        self.ocp.constraints.D = np.zeros((4, nu))
+        self.ocp.constraints.lg = np.zeros(4)
+        self.ocp.constraints.ug = np.zeros(4)
 
     def __generate_mpc_refs(self): self.x_ref_mpc = np.repeat(
         np.copy(self.x_init[-1]), self.N_mpc, axis=0
@@ -260,50 +226,87 @@ class ManipulatorSolverAcados:
         return AB @ Sigma_xu @ AB.T + self.model.cov_w_dt
 
     def solve(self):
-        if self.RECEEDING_HORIZON:
-            X_sim, U_sim = self.run_mpc()
-        else:
-            nx, nu = self.nx, self.nu
-            x_ref_N, N = self.x_warm_start, self.N_traj
-            solver = self.acados_solver
-            x_goal = self.x_warm_start[:, -1]
-            Sigma_k = np.zeros((nx, nx))
-            # set stage references
-            for time_idx in range(N):
-                A_k = solver.get_from_qp_in(time_idx, 'A')
-                B_k = solver.get_from_qp_in(time_idx, 'B')
-                K_k = self.compute_riccatti_gains(A_k, B_k)
-                Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k)
-                solver.set(time_idx, 'p', Sigma_next.flatten(order='f'))
-                x_ref_k = x_ref_N[:, time_idx]
-                solver.set(time_idx, 'x', x_ref_k)
-                solver.cost_set(
-                    time_idx,'yref', np.concatenate([x_ref_k, np.zeros(nu)])
-                    )
-                # update covariance at the next time-step
-                Sigma_k = np.copy(Sigma_next)     
-            # set terminal references
-            solver.set(N, 'x', x_goal)
-            solver.cost_set(
-                N,'yref', np.concatenate([x_goal])
-                ) 
-            # terminal constraints
-            self.ocp.constraints.idxbx_e = np.array(range(self.nx))
-            self.ocp.constraints.lbx_e = x_goal 
-            self.ocp.constraints.ubx_e = x_goal  
-            # solve ocp
-            t = time.time()
-            status = solver.solve()
-            # solver.print_statistics()
-            if status == 0:
-                elapsed = time.time() - t
-                print("HOORAY found a solution after :", elapsed, "seconds")
+        x_ref_N, N = self.x_warm_start, self.N_traj
+        x_ref_N = x_ref_N.T
+        x_warm_start_N = np.concatenate([x_ref_N, x_ref_N[-1].reshape(1,14)], axis=0)
+        u_warm_start_N = np.zeros((N, 7))
+        nx, nu = self.nx, self.nu
+        sens_x = self.casadi_fwdDyn_model.A
+        sens_u = self.casadi_fwdDyn_model.B
+        x_obs_total = self.model.x_obs
+        nb_obs = x_obs_total.shape[0]
+        delta = 0.25
+        eta = norm.ppf(1-self.model.epsilon)
+        # solver main loop
+        for SQP_iter in range(100):
+            if self.RECEEDING_HORIZON:
+                X_sim, U_sim = self.run_mpc()
             else:
-                print('Acados solver failed with error status = ', status)
-            # save open-loop trajectories
-            X_sim = np.array([solver.get(i,"x") for i in range(N+1)])
-            U_sim = np.array([solver.get(i,"u") for i in range(N)])
-        return X_sim, U_sim    
+                nx, nu = self.nx, self.nu
+                solver = self.acados_solver
+                x_goal_ref = x_ref_N[-1]
+                x_goal_warm_start = x_warm_start_N[-1]
+                Sigma_k = np.zeros((nx, nx))
+                # set stage references
+                for time_idx in range(N):
+                    x_ref_k = x_ref_N[time_idx]
+                    x_warm_start_k = x_warm_start_N[time_idx]
+                    u_warm_start_k = u_warm_start_N[time_idx]
+                    solver.set(time_idx, 'x', x_warm_start_k)
+                    solver.set(time_idx, 'u', u_warm_start_k)
+                    solver.cost_set(
+                        time_idx,'yref', np.concatenate([x_ref_k, np.zeros(nu)])
+                        )    
+                    # compute jacobians at the current SQP solution iterate
+                    # and propagate covariances 
+                    A_k = sens_x(x_warm_start_k, u_warm_start_k)
+                    B_k = sens_u(x_warm_start_k, u_warm_start_k)
+                    K_k = self.compute_riccatti_gains(A_k, B_k)
+                    Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k) 
+                    qk = x_warm_start_k[:7]
+                    x_ee = self.model.forwardKinematics(qk)[1]
+                    J = self.model.jacobian(qk)
+                    cons_expr = np.zeros((nb_obs, nx))
+                    lg = np.zeros(nb_obs)
+                    ug = 1e8*np.ones(nb_obs)
+                    for x_obs_idx, x_obs in enumerate(x_obs_total):
+                        distance_fun_norm = np.linalg.norm(x_ee - x_obs)
+                        distance_fun_normal = (J[0,:]@(x_ee[0]-x_obs[0])) + (J[1,:]@(x_ee[1]-x_obs[1])) + (J[2,:]@(x_ee[2]-x_obs[2]))/distance_fun_norm   
+                        backoff_magintude = eta*np.sqrt((distance_fun_normal @ (Sigma_next[:7, :7]) @ distance_fun_normal.T))
+                        cons_expr[x_obs_idx, :7] = distance_fun_normal
+                        lg[x_obs_idx] = delta + backoff_magintude - distance_fun_norm + (distance_fun_normal @ qk)
+                    solver.constraints_set(time_idx, 'C', cons_expr, api='new')
+                    solver.constraints_set(time_idx, 'lg', lg)
+                    solver.constraints_set(time_idx, 'ug', ug) 
+                # set terminal references
+                solver.set(N, 'x', x_goal_warm_start)
+                solver.cost_set(
+                    N,'yref', np.concatenate([x_goal_ref])
+                    ) 
+                # terminal constraints
+                self.ocp.constraints.idxbx_e = np.array(range(self.nx))
+                self.ocp.constraints.lbx_e = x_goal_ref 
+                self.ocp.constraints.ubx_e = x_goal_ref  
+                # solve ocp
+                t = time.time()
+                status = solver.solve()
+                # solver.print_statistics() 
+                if status == 0:
+                    elapsed = time.time() - t
+                    print("HOORAY found a solution after :", elapsed, "seconds")
+                else:
+                    print('Acados solver failed with error status = ', status)    
+                # save open-loop trajectories
+                x_sim = np.array([solver.get(i,"x") for i in range(N+1)])
+                u_sim = np.array([solver.get(i,"u") for i in range(N)])
+                print("difference between two SQP iterations = ", np.linalg.norm(x_sim - x_warm_start_N))
+                if np.linalg.norm(x_sim - x_warm_start_N) <= 1e-6:
+                    print("YESSSSSSSSSSSSSSSSSSSSSSSSS !! .. breaking at SQP iteration number: ", SQP_iter)
+                    break
+                else:
+                    x_warm_start_N = x_sim
+                    u_warm_start_N = u_sim    
+        return x_sim, u_sim    
     
     def interpolate_one_step(self, q, q_next, qdot, qdot_next, tau, tau_next):
         nq, nv = len(q), len(qdot)
@@ -406,6 +409,3 @@ if __name__ == "__main__":
     q7.plot(time, X_sim[:-1, 6])
     q7.plot(time, q_ref[:, 6])
     plt.show()
-    # print('final desired end-effector position = ', x[:, -1])
-    # print('final actual end-effector position = ', t_ee)
-    # print(conf.ee_target_pos)
