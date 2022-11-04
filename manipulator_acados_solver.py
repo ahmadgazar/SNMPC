@@ -9,7 +9,6 @@ import numpy as np
 import utils
 import time 
 
-
 class ManipulatorSolverAcados:
     # constructor
     def __init__(self, model, ee_ref, MPC=False, WARM_START=True):
@@ -89,10 +88,10 @@ class ManipulatorSolverAcados:
         Kp    = self.model.IK_Kp_gains
         w_vel = 1e-1
         dt = self.dt
+        N = ee_des.shape[1]
         qk = self.casadi_fwdDyn_model.initial_state[:7]
-        x_opt = np.zeros((14, xdot.shape[1]))
+        x_opt = np.zeros((14, N))
         x_opt[:7, 0] = qk
-        N = xdot.shape[1]
         rmodel, rdata = self.rmodel, self.rdata
         ee_idx = rmodel.getFrameId(self.ee_frame_name)
         for time_idx in range (N):
@@ -271,7 +270,8 @@ class ManipulatorSolverAcados:
                     ug = 1e8*np.ones(nb_obs)
                     for x_obs_idx, x_obs in enumerate(x_obs_total):
                         distance_fun_norm = np.linalg.norm(x_ee - x_obs)
-                        distance_fun_normal = (J[0,:]@(x_ee[0]-x_obs[0])) + (J[1,:]@(x_ee[1]-x_obs[1])) + (J[2,:]@(x_ee[2]-x_obs[2]))/distance_fun_norm   
+                        distance_fun_normal = \
+                            (J[0,:]@(x_ee[0]-x_obs[0])) + (J[1,:]@(x_ee[1]-x_obs[1])) + (J[2,:]@(x_ee[2]-x_obs[2]))/distance_fun_norm   
                         backoff_magintude = eta*np.sqrt((distance_fun_normal @ (Sigma_next[:7, :7]) @ distance_fun_normal.T))
                         cons_expr[x_obs_idx, :7] = distance_fun_normal
                         lg[x_obs_idx] = delta + backoff_magintude - distance_fun_norm + (distance_fun_normal @ qk)
@@ -322,90 +322,22 @@ class ManipulatorSolverAcados:
             x_interpol[interpol_idx, nq:] = qdot + interpol_idx*dqdot        
         return x_interpol, tau_interpol
 
-if __name__ == "__main__":
-    from manipulator_casadi_model import fixedBaseManipulatorCasadiModel
-    from utils import compute_5th_order_poly_traj, compute_3rd_order_poly_traj
-    import conf_kuka as conf
-    import pinocchio as pin
-    import casadi as ca
-    import meshcat
-
-    def meshcat_material(r, g, b, a):
-        material = meshcat.geometry.MeshPhongMaterial()
-        material.color = int(r * 255) * 256 ** 2 + int(g * 255) * 256 + int(b * 255)
-        material.opacity = a
-        return material
-
-    def addViewerBox(viz, name, sizex, sizey, sizez, rgba):
-        if isinstance(viz, pin.visualize.MeshcatVisualizer):
-            viz.viewer[name].set_object(meshcat.geometry.Box([sizex, sizey, sizez]),
-                                    meshcat_material(*rgba))
-
-    def meshcat_transform(x, y, z, q, u, a, t):
-        return np.array(pin.XYZQUATToSE3([x, y, z, q, u, a, t]))
-    
-    def applyViewerConfiguration(viz, name, xyzquat):
-        if isinstance(viz, pin.visualize.MeshcatVisualizer):
-            viz.viewer[name].set_transform(meshcat_transform(*xyzquat))
-        
-    x_ref = np.reshape(conf.ee_target_pos, (1, 3))
-    x_ref_N = np.repeat(x_ref, conf.N_traj, axis=0)
-    T = conf.N_traj*conf.dt
-    x, xdot, _ = compute_5th_order_poly_traj(conf.ee_init_pos, conf.ee_target_pos, T, conf.dt)
-    ee_ref = np.concatenate([x, xdot], axis=0)
-    solver = ManipulatorSolverAcados(
-        fixedBaseManipulatorCasadiModel(conf), ee_ref, MPC=False
-        )
-    qk = solver.casadi_fwdDyn_model.initial_state[:7]
-    q_sym = solver.model.q
-    cmodel = solver.cmodel
-    cdata =  solver.cdata
-    rmodel = conf.rmodel
-    rdata = conf.rdata  
-    X_sim, U_sim = solver.solve()
-    ee_sim = np.zeros((X_sim.shape[0], 3))
-    robot = conf.robot
-    viz = pin.visualize.MeshcatVisualizer(
-        robot.model, robot.collision_model, robot.visual_model
-        )
-    viz.initViewer(open=True)
-    viz.loadViewerModel()
-    addViewerBox(viz, 'world/box1', .1, .1, .0, [1., .2, .2, .5])
-    applyViewerConfiguration(viz, 'world/box1', [0.65, -0., 0.4, 1, 0, 0, 0])
-    addViewerBox(viz, 'world/box2', .1, .0, .1, [1., .2, .2, .5])
-    applyViewerConfiguration(viz, 'world/box2', [0.65, -0.05, 0.4+0.05, 1, 0, 0, 0])
-    for i in range(conf.N_traj-1):
-        x_des, tau_des = solver.interpolate_one_step(
-            X_sim[i, :7], X_sim[i+1, :7], 
-            X_sim[i, 7:14], X_sim[i+1, 7:14],
-            U_sim[i], U_sim[i+1]
-        )
-        for t in range(10):
-            q_des = x_des[t, :7]
-            
-            pin.framesForwardKinematics(rmodel, rdata, q_des)
-            ee_pos = rdata.oMf[rmodel.getFrameId('contact')].translation
-            # applyViewerConfiguration(viz, 'world/box1', [ee_pos[0], ee_pos[1], ee_pos[2], 1, 0, 0, 0])
-            # applyViewerConfiguration(viz, 'world/box2', [ee_pos[0], ee_pos[1]-0.05, ee_pos[2]+0.05, 1, 0, 0, 0])
-            if i == int(ee_sim.shape[0]/2):
-                ee_sim[t, :] = ee_pos
-            viz.display(q_des)
-    q_ref = solver.x_warm_start.T
-    import matplotlib.pyplot as plt
-    fig, (q1, q2, q3, q4, q5, q6, q7) = plt.subplots(7, 1, sharex=True)
-    time = np.arange(0, np.round(conf.N_traj*conf.dt, 2),conf.dt)
-    q1.plot(time, X_sim[:-1, 0])
-    q1.plot(time, q_ref[:, 0])
-    q2.plot(time, X_sim[:-1, 1])
-    q2.plot(time, q_ref[:, 1])
-    q3.plot(time, X_sim[:-1, 2])
-    q3.plot(time, q_ref[:, 2])
-    q4.plot(time, X_sim[:-1, 3])
-    q4.plot(time, q_ref[:, 3])
-    q5.plot(time, X_sim[:-1, 4])
-    q5.plot(time, q_ref[:, 4])
-    q6.plot(time, X_sim[:-1, 5])
-    q6.plot(time, q_ref[:, 5])
-    q7.plot(time, X_sim[:-1, 6])
-    q7.plot(time, q_ref[:, 6])
-    plt.show()
+    # # plot optimized joint positions vs IK warm-start
+    # q_ref = solver.x_warm_start.T
+    # fig, (q1, q2, q3, q4, q5, q6, q7) = plt.subplots(7, 1, sharex=True)
+    # time = np.arange(0, np.round(conf.N_traj*conf.dt, 2),conf.dt)
+    # q1.plot(time, X_sim[:-1, 0])
+    # q1.plot(time, q_ref[:, 0])
+    # q2.plot(time, X_sim[:-1, 1])
+    # q2.plot(time, q_ref[:, 1])
+    # q3.plot(time, X_sim[:-1, 2])
+    # q3.plot(time, q_ref[:, 2])
+    # q4.plot(time, X_sim[:-1, 3])
+    # q4.plot(time, q_ref[:, 3])
+    # q5.plot(time, X_sim[:-1, 4])
+    # q5.plot(time, q_ref[:, 4])
+    # q6.plot(time, X_sim[:-1, 5])
+    # q6.plot(time, q_ref[:, 5])
+    # q7.plot(time, X_sim[:-1, 6])
+    # q7.plot(time, q_ref[:, 6])
+    # plt.show()

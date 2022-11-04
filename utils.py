@@ -1,7 +1,8 @@
-import numpy as np
+import pinocchio as pin
 from casadi import *
 import casadi as ca
-#TODO change to jnp and jit
+import numpy as np
+import meshcat
 
 """
 inner approximation
@@ -132,7 +133,6 @@ def vec2sym_mat(vec, nx):
 
     return mat
 
-
 def sym_mat2vec(mat):
     nx = mat.shape[0]
 
@@ -154,3 +154,28 @@ def l1_permut_mat(nb_variables):
     for variable_idx in range(nb_variables):
         permut_mat[:, variable_idx] = np.array([(-1)**(j//(2**variable_idx)) for j in range(2**(nb_variables))])
     return permut_mat
+
+def meshcat_material(r, g, b, a):
+        material = meshcat.geometry.MeshPhongMaterial()
+        material.color = int(r * 255) * 256 ** 2 + int(g * 255) * 256 + int(b * 255)
+        material.opacity = a
+        return material
+
+def addViewerBox(viz, name, sizex, sizey, sizez, rgba):
+    if isinstance(viz, pin.visualize.MeshcatVisualizer):
+        viz.viewer[name].set_object(meshcat.geometry.Box([sizex, sizey, sizez]),
+                                meshcat_material(*rgba))
+
+def addLineSegment(viz, name, vertices):
+    if isinstance(viz, pin.visualize.MeshcatVisualizer):
+        viz.viewer[name].set_object(meshcat.geometry.Points(
+                    meshcat.geometry.PointsGeometry(vertices),     
+                    meshcat.geometry.PointsMaterial()
+                    ))
+
+def meshcat_transform(x, y, z, q, u, a, t):
+    return np.array(pin.XYZQUATToSE3([x, y, z, q, u, a, t]))
+
+def applyViewerConfiguration(viz, name, xyzquat):
+    if isinstance(viz, pin.visualize.MeshcatVisualizer):
+        viz.viewer[name].set_transform(meshcat_transform(*xyzquat))
