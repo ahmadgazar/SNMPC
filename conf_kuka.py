@@ -27,7 +27,6 @@ Q = np.eye(2*nq)
 R = 0.1*np.eye(nq)
 # uncertainty parameters 
 cov_w_dt = 0.05*dt*np.eye(2*nq)
-epsilon = 0.01
 # cost function weights
 IK_cost_weight = 5e-1
 IK_Kp_gains = np.diag([0.5, 0.5, 0.5])

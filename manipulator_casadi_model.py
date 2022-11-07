@@ -6,7 +6,7 @@ import numpy as np
 
 class fixedBaseManipulatorCasadiModel:
     # constructor
-    def __init__(self, conf, STOCHASTIC_OCP=True):
+    def __init__(self, conf, STOCHASTIC_OCP=False, epsilon=0.05):
         self.dt = conf.dt
         self.dt_ctrl = conf.dt_ctrl
         self.N_traj = conf.N_traj 
@@ -30,7 +30,7 @@ class fixedBaseManipulatorCasadiModel:
         self.STOCHASTIC_OCP = STOCHASTIC_OCP
         if STOCHASTIC_OCP:
             self.cov_w_dt = conf.cov_w_dt
-            self.epsilon = conf.epsilon
+            self.epsilon = epsilon
 
         self.__fill_casadi_fwdDyn_model()
         self.forwardKinematics = self.forward_kinematics(self.ee_frame_name)

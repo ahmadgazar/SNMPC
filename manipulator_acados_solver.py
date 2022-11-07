@@ -4,9 +4,7 @@ from qpsolvers import solve_qp
 from scipy.stats import norm
 import scipy.linalg as la
 import pinocchio as pin 
-import casadi as ca
 import numpy as np
-import utils
 import time 
 
 class ManipulatorSolverAcados:
@@ -235,7 +233,8 @@ class ManipulatorSolverAcados:
         x_obs_total = self.model.x_obs
         nb_obs = x_obs_total.shape[0]
         delta = 0.25
-        eta = norm.ppf(1-self.model.epsilon)
+        if self.model.STOCHASTIC_OCP:
+            eta = norm.ppf(1-self.model.epsilon)
         # solver main loop
         for SQP_iter in range(100):
             if self.RECEEDING_HORIZON:
@@ -256,12 +255,13 @@ class ManipulatorSolverAcados:
                     solver.cost_set(
                         time_idx,'yref', np.concatenate([x_ref_k, np.zeros(nu)])
                         )    
-                    # compute jacobians at the current SQP solution iterate
-                    # and propagate covariances 
-                    A_k = sens_x(x_warm_start_k, u_warm_start_k)
-                    B_k = sens_u(x_warm_start_k, u_warm_start_k)
-                    K_k = self.compute_riccatti_gains(A_k, B_k)
-                    Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k) 
+                    if self.model.STOCHASTIC_OCP:
+                        # compute jacobians at the current SQP solution iterate
+                        # and propagate covariances 
+                        A_k = sens_x(x_warm_start_k, u_warm_start_k)
+                        B_k = sens_u(x_warm_start_k, u_warm_start_k)
+                        K_k = self.compute_riccatti_gains(A_k, B_k)
+                        Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k) 
                     qk = x_warm_start_k[:7]
                     x_ee = self.model.forwardKinematics(qk)[1]
                     J = self.model.jacobian(qk)
@@ -272,9 +272,14 @@ class ManipulatorSolverAcados:
                         distance_fun_norm = np.linalg.norm(x_ee - x_obs)
                         distance_fun_normal = \
                             (J[0,:]@(x_ee[0]-x_obs[0])) + (J[1,:]@(x_ee[1]-x_obs[1])) + (J[2,:]@(x_ee[2]-x_obs[2]))/distance_fun_norm   
-                        backoff_magintude = eta*np.sqrt((distance_fun_normal @ (Sigma_next[:7, :7]) @ distance_fun_normal.T))
+                        if self.model.STOCHASTIC_OCP:
+                            backoff_magintude = \
+                                eta*np.sqrt((distance_fun_normal @ (Sigma_next[:7, :7]) @ distance_fun_normal.T))
+                        else:
+                            backoff_magintude = 0.
                         cons_expr[x_obs_idx, :7] = distance_fun_normal
-                        lg[x_obs_idx] = delta + backoff_magintude - distance_fun_norm + (distance_fun_normal @ qk)
+                        lg[x_obs_idx] = \
+                            delta + backoff_magintude - distance_fun_norm + (distance_fun_normal @ qk)
                     solver.constraints_set(time_idx, 'C', cons_expr, api='new')
                     solver.constraints_set(time_idx, 'lg', lg)
                     solver.constraints_set(time_idx, 'ug', ug) 
