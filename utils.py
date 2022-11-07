@@ -159,6 +159,7 @@ def meshcat_material(r, g, b, a):
         material = meshcat.geometry.MeshPhongMaterial()
         material.color = int(r * 255) * 256 ** 2 + int(g * 255) * 256 + int(b * 255)
         material.opacity = a
+        material.linewidth = 0.03
         return material
 
 def addViewerBox(viz, name, sizex, sizey, sizez, rgba):
@@ -166,11 +167,11 @@ def addViewerBox(viz, name, sizex, sizey, sizez, rgba):
         viz.viewer[name].set_object(meshcat.geometry.Box([sizex, sizey, sizez]),
                                 meshcat_material(*rgba))
 
-def addLineSegment(viz, name, vertices):
+def addLineSegment(viz, name, vertices, rgba):
     if isinstance(viz, pin.visualize.MeshcatVisualizer):
         viz.viewer[name].set_object(meshcat.geometry.Points(
                     meshcat.geometry.PointsGeometry(vertices),     
-                    meshcat.geometry.PointsMaterial()
+                    meshcat_material(*rgba)
                     ))
 
 def meshcat_transform(x, y, z, q, u, a, t):
