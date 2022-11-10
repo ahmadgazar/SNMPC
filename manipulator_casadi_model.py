@@ -26,6 +26,7 @@ class fixedBaseManipulatorCasadiModel:
         self.x_limits = conf.state_limits
         self.u_limits = conf.control_limits
         self.x_obs = conf.x_obs
+        self.delta = conf.delta
         self.q0 = conf.q0
         self.STOCHASTIC_OCP = STOCHASTIC_OCP
         if STOCHASTIC_OCP:

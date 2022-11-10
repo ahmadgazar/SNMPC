@@ -20,7 +20,7 @@ cdata = cmodel.createData()
 dt = 0.01
 dt_ctrl = 0.001
 N_traj = 300
-N_mpc  = 20
+N_mpc  = 30
 # QR control
 nq = q0.shape[0]
 Q = np.eye(2*nq)
@@ -49,3 +49,5 @@ x_obs = np.array(
                     [0.65-0.05, -0.05, 0.4-0.05],  #bottom left
                     [0.65+0.05, -0.05, 0.4-0.05]]  #bottom right
                 )
+# collision avoidance radius
+delta = 0.25                
