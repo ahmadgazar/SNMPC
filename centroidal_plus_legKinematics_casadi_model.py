@@ -79,8 +79,11 @@ class CentroidalPlusLegKinematicsCasadiModel:
         LOCAL_WORLD_ALIGNED = cas_kin_dyn.CasadiKinDyn.LOCAL_WORLD_ALIGNED
         # joint names
         joint_names = kindyn.joint_names()
-        if 'universe' in joint_names: joint_names.remove('universe')
-        if 'floating_base_joint' in joint_names: joint_names.remove('floating_base_joint')
+        print(joint_names)
+        # if 'universe' in joint_names: joint_names.remove('universe')
+        # if 'floating_base_joint' in joint_names: joint_names.remove('floating_base_joint')
+        self.com = Function.deserialize(kindyn.centerOfMass())
+        self.hg = Function.deserialize(kindyn.computeCentroidalDynamics())
         if self._robot_type == 'QUADRUPED':
             # end-effectors kinematics casadi functions
             self.fk_FL = Function.deserialize(kindyn.fk(self._ee_frame_names[0]))
@@ -89,46 +92,58 @@ class CentroidalPlusLegKinematicsCasadiModel:
             self.fk_HR = Function.deserialize(kindyn.fk(self._ee_frame_names[3]))
             # end-effectors jacobians (in the local frame by default as in pinocchio convention)
             self.FL_frame_vel = Function.deserialize(
-                kindyn.frameVelocity(self._ee_frame_names[0], LOCAL_WORLD_ALIGNED)
+                kindyn.frameVelocity(self._ee_frame_names[0], LOCAL)
                 )
             self.FR_frame_vel = Function.deserialize(
-                kindyn.frameVelocity(self._ee_frame_names[1], LOCAL_WORLD_ALIGNED)
+                kindyn.frameVelocity(self._ee_frame_names[1], LOCAL)
                 )
             self.HL_frame_vel = Function.deserialize(
-                kindyn.frameVelocity(self._ee_frame_names[2], LOCAL_WORLD_ALIGNED)
+                kindyn.frameVelocity(self._ee_frame_names[2], LOCAL)
                 )
             self.HR_frame_vel = Function.deserialize(
-                kindyn.frameVelocity(self._ee_frame_names[3], LOCAL_WORLD_ALIGNED)
+                kindyn.frameVelocity(self._ee_frame_names[3], LOCAL)
                 )
                     
     def __setup_casadi_model_quadruped_with_leg_kinematics(self):
         m, g = self._m, self._g       
         # setup states & controls symbols
-        x = vertcat(MX.sym('com_x'), MX.sym('com_y'), MX.sym('com_z'),                 #com
-                    MX.sym('lin_mom_x'), MX.sym('lin_mom_y'), MX.sym('lin_mom_z'),     #lin_mom  
-                    MX.sym('ang_mom_x'), MX.sym('ang_mom_y'), MX.sym('ang_mom_z'),     #ang_mom    
-                    MX.sym('FL_HAA_pos'), MX.sym('FL_HFE_pos'), MX.sym('FL_KFE_pos'),  #q_FL 
-                    MX.sym('FR_HAA_pos'), MX.sym('FR_HFE_pos'), MX.sym('FR_KFE_pos'),  #q_FR
-                    MX.sym('HL_HAA_pos'), MX.sym('HL_HFE_pos'), MX.sym('HL_KFE_pos'),  #q_HL
-                    MX.sym('HR_HAA_pos'), MX.sym('HR_HFE_pos'), MX.sym('HR_KFE_pos')   #q_HR
+        # state
+        x = vertcat(MX.sym('com_x'), MX.sym('com_y'), MX.sym('com_z'),                            #com
+                    MX.sym('lin_mom_x'), MX.sym('lin_mom_y'), MX.sym('lin_mom_z'),                #linear momentum  
+                    MX.sym('ang_mom_x'), MX.sym('ang_mom_y'), MX.sym('ang_mom_z'),                #angular momentum
+                    
+                    MX.sym('base_pos_x'), MX.sym('base_pos_y'), MX.sym('base_pos_z'),             #floating-base position
+                    MX.sym('base_quat_i'), MX.sym('base_quat_j'), MX.sym('base_quat_k'),          #floating-base orienation
+                    MX.sym('base_orient_r'),                                                          
+                    
+                    MX.sym('FL_HAA_pos'), MX.sym('FL_HFE_pos'), MX.sym('FL_KFE_pos'),             #FL joint positions
+                    MX.sym('FR_HAA_pos'), MX.sym('FR_HFE_pos'), MX.sym('FR_KFE_pos'),             #FR joint positions
+                    MX.sym('HL_HAA_pos'), MX.sym('HL_HFE_pos'), MX.sym('HL_KFE_pos'),             #HL joint positions
+                    MX.sym('HR_HAA_pos'), MX.sym('HR_HFE_pos'), MX.sym('HR_KFE_pos')              #HR joint positions
                     )             
-        u = vertcat(MX.sym('fx_FL'), MX.sym('fy_FL'), MX.sym('fz_FL'),                 #f_FL
-                    MX.sym('fx_FR'), MX.sym('fy_FR'), MX.sym('fz_FR'),                 #f_FR
-                    MX.sym('fx_HL'), MX.sym('fy_HL'), MX.sym('fz_HL'),                 #f_HL
-                    MX.sym('fx_HR'), MX.sym('fy_HR'), MX.sym('fz_HR'),                 #f_HR
-                    MX.sym('FL_HAA_vel'), MX.sym('FL_HFE_vel'), MX.sym('FL_KFE_vel'),  #qdot_FL
-                    MX.sym('FR_HAA_vel'), MX.sym('FR_HFE_vel'), MX.sym('FR_KFE_vel'),  #qdot_FR
-                    MX.sym('HL_HAA_vel'), MX.sym('HL_HFE_vel'), MX.sym('HL_KFE_vel'),  #qdot_HL
-                    MX.sym('HR_HAA_vel'), MX.sym('HR_HFE_vel'), MX.sym('HR_KFE_vel')   #qdot_HR
+        # controls
+        u = vertcat(MX.sym('fx_FL'), MX.sym('fy_FL'), MX.sym('fz_FL'),                            #FL contact forces 
+                    MX.sym('fx_FR'), MX.sym('fy_FR'), MX.sym('fz_FR'),                            #FR contact forces
+                    MX.sym('fx_HL'), MX.sym('fy_HL'), MX.sym('fz_HL'),                            #HL contact forces
+                    MX.sym('fx_HR'), MX.sym('fy_HR'), MX.sym('fz_HR'),                            #HR contact forces
+                    
+                    MX.sym('FL_HAA_vel'), MX.sym('FL_HFE_vel'), MX.sym('FL_KFE_vel'),             #FL joint velocities
+                    MX.sym('FR_HAA_vel'), MX.sym('FR_HFE_vel'), MX.sym('FR_KFE_vel'),             #FR joint velocities
+                    MX.sym('HL_HAA_vel'), MX.sym('HL_HFE_vel'), MX.sym('HL_KFE_vel'),             #HL joint velocities
+                    MX.sym('HR_HAA_vel'), MX.sym('HR_HFE_vel'), MX.sym('HR_KFE_vel')              #HR joint velocities
                     )
-        # xdot symbols
-        xdot = vertcat(MX.sym('com_xdot'), MX.sym('com_ydot'), MX.sym('com_zdot'),
-                       MX.sym('lin_mom_xdot'), MX.sym('lin_mom_ydot'), MX.sym('lin_mom_zdot'),
-                       MX.sym('ang_mom_xdot'), MX.sym('ang_mom_ydot'), MX.sym('ang_mom_zdot'),
-                       MX.sym('FL_HAA_posdot'), MX.sym('FL_HFE_posdot'), MX.sym('FL_KFE_posdot'),
-                       MX.sym('FR_HAA_posdot'), MX.sym('FR_HFE_posdot'), MX.sym('FR_KFE_posdot'),
-                       MX.sym('HL_HAA_posdot'), MX.sym('HL_HFE_posdot'), MX.sym('HL_KFE_posdot'),
-                       MX.sym('HR_HAA_posdot'), MX.sym('HR_HFE_posdot'), MX.sym('HR_KFE_posdot')
+        # xdot 
+        xdot = vertcat(MX.sym('com_xdot'), MX.sym('com_ydot'), MX.sym('com_zdot'),                #CoM linear velocity
+                       MX.sym('lin_mom_xdot'), MX.sym('lin_mom_ydot'), MX.sym('lin_mom_zdot'),    #CoM linear acc.
+                       MX.sym('ang_mom_xdot'), MX.sym('ang_mom_ydot'), MX.sym('ang_mom_zdot'),    #CoM angular acc.
+
+                       MX.sym('base_vel_x'), MX.sym('base_vel_y'), MX.sym('base_vel_z'),          #floating-base linear velocity
+                       MX.sym('base_omega_x'), MX.sym('base_omega_y'), MX.sym('base_omega_Z'),    #floating-base angular velocity
+                       
+                       MX.sym('FL_HAA_posdot'), MX.sym('FL_HFE_posdot'), MX.sym('FL_KFE_posdot'), #FL joint velocities
+                       MX.sym('FR_HAA_posdot'), MX.sym('FR_HFE_posdot'), MX.sym('FR_KFE_posdot'), #FR joint velocities
+                       MX.sym('HL_HAA_posdot'), MX.sym('HL_HFE_posdot'), MX.sym('HL_KFE_posdot'), #HL joint velocities
+                       MX.sym('HR_HAA_posdot'), MX.sym('HR_HFE_posdot'), MX.sym('HR_KFE_posdot')  #HR joint velocities
                        )
         # setup parametric symbols
         # contact surface centroid position where the robot feet should stay within
@@ -197,6 +212,20 @@ class CentroidalPlusLegKinematicsCasadiModel:
                     u[18], u[19], u[20],
                     u[21], u[22], u[23]
                     )
+        # full-kinematics com constraint
+        A_com = self.com(q=q)['com']-com 
+        lb_com = np.zeros(A_com.shape[0])
+        ub_com = lb_com
+        # full-kinematics linear momentum constraint (can be ignored?)
+        qdot = u[12:]
+        nv = qdot.shape[0]
+        A_dh_linmom = self.hg(q=q, v=qdot, a=MX.zeros(nv))['dh_lin'] - x[3:6]
+        lb_dh_linmom = np.zeros(A_dh_linmom.shape[0])
+        ub_dh_linmom = lb_dh_linmom
+        # full-kinematics angular momentum constraint
+        A_dh_angmom = self.hg(q=q, v=qdot, a=MX.zeros(nv))['dh_ang'] - x[6:9]
+        lb_dh_angmom = np.zeros(A_dh_angmom.shape[0])
+        ub_dh_angmom = lb_dh_angmom
         # friction pyramid constraints
         friction_pyramid_mat = construct_friction_pyramid_constraint_matrix(self)
         cone_constraints_fr = CONTACT_ACTIVATION_FR*(friction_pyramid_mat @ (reshape(R_FR,(3,3)).T))
@@ -213,26 +242,24 @@ class CentroidalPlusLegKinematicsCasadiModel:
         ub_friction_pyramid = np.zeros(A_friction_pyramid.shape[0])
         # box constraints on lateral direction of the contact location
         A_contact_location_lateral = vertcat(
-            CONTACT_ACTIVATION_FR*(contact_position_FR[:2]-np.array([0.1946, -0.14695])),
-            CONTACT_ACTIVATION_FL*(contact_position_FL[:2]-np.array([0.1946, 0.14695])),
-            CONTACT_ACTIVATION_HR*(contact_position_HR[:2]-np.array([-0.1946, -0.14695])),
-            CONTACT_ACTIVATION_HL*(contact_position_HL[:2]-np.array([-0.1946, 0.14695]))
+            CONTACT_ACTIVATION_FR*(contact_position_FR[:2]-P_FR[:2]),
+            CONTACT_ACTIVATION_FL*(contact_position_FL[:2]-P_FL[:2]),
+            CONTACT_ACTIVATION_HR*(contact_position_HR[:2]-P_HR[:2]),
+            CONTACT_ACTIVATION_HL*(contact_position_HL[:2]-P_HL[:2])
             )
-            
         lb_contact_location_lateral = -0.2*np.ones(A_contact_location_lateral.shape[0])
         ub_contact_location_lateral =  0.2*np.ones(A_contact_location_lateral.shape[0])
         # zero height on the vertical direction of the contact location 
         A_contact_location_vertical = vertcat(
-            CONTACT_ACTIVATION_FR*(contact_position_FR[2]+0.22294615),
-            CONTACT_ACTIVATION_FL*(contact_position_FL[2]+0.22294615),
-            CONTACT_ACTIVATION_HR*(contact_position_HR[2]+0.22294615),
-            CONTACT_ACTIVATION_HL*(contact_position_HL[2]+0.22294615)
+            CONTACT_ACTIVATION_FR*(contact_position_FR[2]),
+            CONTACT_ACTIVATION_FL*(contact_position_FL[2]),
+            CONTACT_ACTIVATION_HR*(contact_position_HR[2]),
+            CONTACT_ACTIVATION_HL*(contact_position_HL[2])
             )
         lb_contact_location_vertical = np.zeros(A_contact_location_vertical.shape[0])
         ub_contact_location_vertical = lb_contact_location_vertical    
         # end-effector frame velocity constraint when feet 
         # are in contact with the ground (i.e J(q).qdot = 0)
-        qdot = u[12:]
         A_frame_velocity = vertcat(
                                 CONTACT_ACTIVATION_FR*(
                                     self.FR_frame_vel(q=q, qdot=qdot)['ee_vel_linear']
@@ -272,20 +299,30 @@ class CentroidalPlusLegKinematicsCasadiModel:
         constraints.expr = vertcat(
             A_friction_pyramid, 
             A_contact_location_lateral,
-            A_frame_velocity
+            #A_contact_location_vertical,
+            A_frame_velocity,
+            A_dh_linmom,
+            A_dh_angmom,
+            A_com
             )
-        constraints.lb = np.hstack(
-            [lb_friction_pyramid,
+        constraints.lb = np.hstack([
+            lb_friction_pyramid,
             lb_contact_location_lateral,
-            lb_frame_velocity
-        ]
-            )
-        constraints.ub = np.hstack(
-            [ub_friction_pyramid,
+            #lb_contact_location_vertical,
+            lb_frame_velocity,
+            lb_dh_linmom,
+            lb_dh_angmom,
+            lb_com
+        ])
+        constraints.ub = np.hstack([
+            ub_friction_pyramid,
             ub_contact_location_lateral,
-            ub_frame_velocity
-            ]
-            )     
+            #ub_contact_location_vertical,
+            ub_frame_velocity,
+            ub_dh_linmom,
+            ub_dh_angmom,
+            ub_com
+        ])
         model.constraints = constraints
         self.casadi_model = model
 
