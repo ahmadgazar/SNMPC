@@ -1,6 +1,5 @@
 import pinocchio as pin
 from casadi import *
-import casadi as ca
 import numpy as np
 import meshcat
 
@@ -33,7 +32,8 @@ def interpolate_centroidal_traj(conf, data):
             'contact_sequence':np.array([]).reshape(0, 4)}
     for outer_time_idx in range(N+1):
         inner_time_idx = outer_time_idx*N_inner
-        result['state'][:, inner_time_idx:inner_time_idx+N_inner] = np.tile(data['state'][:, outer_time_idx], (N_inner,1)).T
+        result['state'][:, inner_time_idx:inner_time_idx+N_inner] = \
+            np.tile(data['state'][:, outer_time_idx], (N_inner,1)).T
         if outer_time_idx < N:
             result['contact_sequence'] = np.vstack([result['contact_sequence'], 
                 np.tile(data['contact_sequence'][outer_time_idx], (N_inner, 1))])  
@@ -92,28 +92,26 @@ def compute_5th_order_poly_traj(x0, x1, T, dt):
         ddx[:,i] = 2*c + 6*d*t + 12*e*t**2 + 20*f*t**3
     return x, dx, ddx
 
-def compute_norm_contact_slippage(contact_position):
-  # first time instance the robot touches the ground
-  for p in contact_position:
-    if np.linalg.norm(p) > -1e-8 and  np.linalg.norm(p) < 1e-8:
-      continue
-    else:
-      contact_pos_ref = p 
-    break   
-  contact_dev_norm = np.zeros(contact_position.shape[0])
-  for time_idx in range(len(contact_position)-1):
-    # ignore contact samples in the air  
-    if np.linalg.norm(contact_position[time_idx], 2) > -1e-8 and np.linalg.norm(contact_position[time_idx], 2) < 1e-8:
-      contact_pos_ref = contact_position[time_idx+1]
-    else:
-      slippage_norm = np.linalg.norm((contact_pos_ref-contact_position[time_idx]), 2)
-      # ignore simulation spikes 
-      if slippage_norm > 0.015:
-        contact_dev_norm[time_idx] = contact_dev_norm[time_idx-1]
-      else:
-        contact_dev_norm[time_idx] = slippage_norm
-  return contact_dev_norm    
+def integrate_quaternion_casadi(q, omega):
+    w1, v1 = q[3], q[0:3]
+    w2, v2 = 0., omega
+    temp = w1*v2 + w2*v1 + (skew(v1)@ v2)  
+    qdot = [temp[0], temp[1], temp[2], w1*w2 - (v1.T @ v2)]
+    return qdot
 
+def quatToRot_casadi(q):
+    R = SX.zeros(3, 3)
+    qi = q[0]; qj = q[1]; qk = q[2]; qr = q[3]
+    R[0, 0] = 1. - 2. * (qj * qj + qk * qk)
+    R[0, 1] = 2. * (qi * qj - qk * qr)
+    R[0, 2] = 2. * (qi * qk + qj * qr)
+    R[1, 0] = 2. * (qi * qj + qk * qr)
+    R[1, 1] = 1. - 2. * (qi * qi + qk * qk)
+    R[1, 2] = 2. * (qj * qk - qi * qr)
+    R[2, 0] = 2. * (qi * qk - qj * qr)
+    R[2, 1] = 2. * (qj * qk + qi * qr)
+    R[2, 2] = 1. - 2. * (qi * qi + qj * qj)
+    return R
 
 def vec2sym_mat(vec, nx):
     # nx = (vec.shape[0])
@@ -121,7 +119,7 @@ def vec2sym_mat(vec, nx):
     if isinstance(vec, np.ndarray):
         mat = np.zeros((nx,nx))
     else:
-        mat = ca.SX.zeros(nx,nx)
+        mat = SX.zeros(nx,nx)
 
     start_mat = 0
     for i in range(nx):
@@ -139,7 +137,7 @@ def sym_mat2vec(mat):
     if isinstance(mat, np.ndarray):
         vec = np.zeros((int((nx+1)*nx/2),))
     else:
-        vec = ca.SX.zeros(int((nx+1)*nx/2))
+        vec = SX.zeros(int((nx+1)*nx/2))
 
     start_mat = 0
     for i in range(nx):
@@ -152,7 +150,8 @@ def sym_mat2vec(mat):
 def l1_permut_mat(nb_variables):
     permut_mat = np.zeros((2**nb_variables, nb_variables))
     for variable_idx in range(nb_variables):
-        permut_mat[:, variable_idx] = np.array([(-1)**(j//(2**variable_idx)) for j in range(2**(nb_variables))])
+        permut_mat[:, variable_idx] = \
+            np.array([(-1)**(j//(2**variable_idx)) for j in range(2**(nb_variables))])
     return permut_mat
 
 def meshcat_material(r, g, b, a):

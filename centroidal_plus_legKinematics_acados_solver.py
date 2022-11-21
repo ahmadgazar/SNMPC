@@ -64,10 +64,14 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         acados_model.p = self.casadi_model.p
         self.acados_model = acados_model
 
-    def __fill_init_params(self): self.ocp.parameter_values = np.zeros(self.casadi_model.p.shape[0])
+    def __fill_init_params(self): 
+        self.ocp.parameter_values = np.zeros(self.casadi_model.p.shape[0])
+        self.ocp.solver_options.__initialize_t_slacks = 0
     
     def __fill_ocp_cost(self):
-        ny, nx, nu = self.ny, self.nx, self.nu 
+        cost = self.ocp.cost
+        ny, nx, nu = self.ny, self.nx, self.nu
+        nh = self.casadi_model.constraints.lb.shape[0] 
         # coefficient matrices
         Vx = np.zeros((ny, nx))
         Vx[:nx, :] = np.eye(nx)
@@ -79,14 +83,14 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.ocp.cost.W = la.block_diag(Q, R)
         self.ocp.cost.W_e = la.block_diag(Q)       
         # initial state tracking reference
-        self.ocp.cost.cost_type = "LINEAR_LS"
-        self.ocp.cost.cost_type_e = "LINEAR_LS"
+        cost.cost_type = "LINEAR_LS"
+        cost.cost_type_e = "LINEAR_LS"
         # initial state tracking reference
-        self.ocp.cost.yref_e = np.zeros(nx)
-        self.ocp.cost.yref = np.zeros(ny)
-        self.ocp.cost.Vx_e = Vx_e
-        self.ocp.cost.Vx = Vx
-        self.ocp.cost.Vu = Vu
+        cost.yref_e = np.zeros(nx)
+        cost.yref = np.zeros(ny)
+        cost.Vx_e = Vx_e
+        cost.Vx = Vx
+        cost.Vu = Vu
 
     def __fill_ocp_constraints(self):
         # initial constraints
@@ -100,9 +104,21 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             # self.ocp.constraints.lbx_e = x_goal 
             # self.ocp.constraints.ubx_e = x_goal        
         if self.casadi_model.model_name == 'quadruped_centroidal_momentum_plus_leg_kinematics':
+            nh = self.casadi_model.constraints.lb.shape[0] 
             self.ocp.model.con_h_expr = self.casadi_model.constraints.expr
             self.ocp.constraints.lh = self.casadi_model.constraints.lb
             self.ocp.constraints.uh = self.casadi_model.constraints.ub
+            # slacks on nonlinear constraints
+            L2_pen = 1e4
+            L1_pen = 1e0 #1e0
+            self.ocp.constraints.lsh = np.zeros(nh)
+            self.ocp.constraints.ush = np.zeros(nh)
+            self.ocp.constraints.idxsh = np.array(range(nh))
+            self.ocp.cost.Zl = L2_pen * np.ones(nh)
+            self.ocp.cost.Zu = L2_pen * np.ones(nh)
+            self.ocp.cost.zl = L1_pen * np.ones(nh)
+            self.ocp.cost.zu = L1_pen * np.ones(nh)
+
         elif self.casadi_model.model_name == 'flat_foot_humanoid_centroidal_momentum_plus_leg_kinematics':
             self.ocp.model.con_h_expr = vertcat(
                 self.casadi_model.friction_pyramid_constraints.expr, self.casadi_model.cop_constraints.expr
@@ -160,9 +176,12 @@ class CentroidalPlusLegKinematicsAcadosSolver:
     def __generate_mpc_refs(self):
         nb_contacts, N_mpc = self.nb_contacts, self.N_mpc
         self.x_ref_mpc = self.x_init[:self.N_traj+1]
-        contacts_logic_final = self.contact_data['contacts_logic'][-1].reshape(1, nb_contacts)
-        contacts_position_final = self.contact_data['contacts_position'][-1].reshape(1, nb_contacts*3)
-        contacts_orient_final = self.contact_data['contacts_orient'][-1].reshape(1, nb_contacts, 3, 3)
+        contacts_logic_final = \
+            self.contact_data['contacts_logic'][-1].reshape(1, nb_contacts)
+        contacts_position_final = \
+            self.contact_data['contacts_position'][-1].reshape(1, nb_contacts*3)
+        contacts_orient_final = \
+            self.contact_data['contacts_orient'][-1].reshape(1, nb_contacts, 3, 3)
         x_ref_mpc_final = self.x_ref_mpc[-1].reshape(1, self.nx)
         for _ in range(N_mpc):
             self.x_ref_mpc = np.concatenate([self.x_ref_mpc, x_ref_mpc_final], axis=0)
@@ -404,8 +423,8 @@ if __name__ == "__main__":
     x_warmstart = []
     u_warmstart = []
     for k in range(len(centroidal_warmstart)):
-        x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k][7:]]))
-        u_warmstart.append(np.concatenate([np.zeros(12), qdot_warmstart[k][6:]]))
+        x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k]]))
+        u_warmstart.append(np.concatenate([np.zeros(12), qdot_warmstart[k]]))
         pin.framesForwardKinematics(conf.rmodel, conf.rdata, q_warmstart[k])
         hlFootPos = conf.rdata.oMf[conf.rmodel.getFrameId(conf.ee_frame_names[2])].translation
         hrFootPos = conf.rdata.oMf[conf.rmodel.getFrameId(conf.ee_frame_names[3])].translation
@@ -419,14 +438,13 @@ if __name__ == "__main__":
         fk_FR = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[1]))
         fk_HL = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[2]))
         fk_HR = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[3]))
-        print('flFootPos = ', fk_FL(q=q_warmstart[k][7:])['ee_pos'])
-        print('frFootPos = ', fk_FR(q=q_warmstart[k][7:])['ee_pos'])
-        print('hlFootPos = ', fk_HL(q=q_warmstart[k][7:])['ee_pos'])
-        print('hrFootPos = ', fk_HR(q=q_warmstart[k][7:])['ee_pos'], '\n')
+        print('flFootPos = ', fk_FL(q=q_warmstart[k])['ee_pos'])
+        print('frFootPos = ', fk_FR(q=q_warmstart[k])['ee_pos'])
+        print('hlFootPos = ', fk_HL(q=q_warmstart[k])['ee_pos'])
+        print('hrFootPos = ', fk_HR(q=q_warmstart[k])['ee_pos'], '\n')
     model = CentroidalPlusLegKinematicsCasadiModel(conf)
     solver = CentroidalPlusLegKinematicsAcadosSolver(model, x_warmstart, u_warmstart)
     x, u = solver.solve()
-    print(x.shape)
     robot = conf.solo12.robot
     if conf.WITH_MESHCAT_DISPLAY:
         viz = pin.visualize.MeshcatVisualizer(
@@ -442,5 +460,5 @@ if __name__ == "__main__":
         viz.loadViewerModel()
         for k in range(x.shape[0]):
             for j in range(10):
-                q = np.concatenate([q_warmstart[k][:7], x[k, 9:]])        
+                q = np.concatenate([x[k, 9:]])        
                 viz.display(q)
