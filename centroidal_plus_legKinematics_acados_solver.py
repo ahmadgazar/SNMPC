@@ -423,8 +423,8 @@ if __name__ == "__main__":
     x_warmstart = []
     u_warmstart = []
     for k in range(len(centroidal_warmstart)):
-        x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k]]))
-        u_warmstart.append(np.concatenate([np.zeros(12), qdot_warmstart[k]]))
+        x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k][7:]]))
+        u_warmstart.append(np.concatenate([np.zeros(12), qdot_warmstart[k][6:]]))
         pin.framesForwardKinematics(conf.rmodel, conf.rdata, q_warmstart[k])
         hlFootPos = conf.rdata.oMf[conf.rmodel.getFrameId(conf.ee_frame_names[2])].translation
         hrFootPos = conf.rdata.oMf[conf.rmodel.getFrameId(conf.ee_frame_names[3])].translation
@@ -438,13 +438,14 @@ if __name__ == "__main__":
         fk_FR = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[1]))
         fk_HL = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[2]))
         fk_HR = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[3]))
-        print('flFootPos = ', fk_FL(q=q_warmstart[k])['ee_pos'])
-        print('frFootPos = ', fk_FR(q=q_warmstart[k])['ee_pos'])
-        print('hlFootPos = ', fk_HL(q=q_warmstart[k])['ee_pos'])
-        print('hrFootPos = ', fk_HR(q=q_warmstart[k])['ee_pos'], '\n')
+        print('flFootPos = ', fk_FL(q=q_warmstart[k][7:])['ee_pos'])
+        print('frFootPos = ', fk_FR(q=q_warmstart[k][7:])['ee_pos'])
+        print('hlFootPos = ', fk_HL(q=q_warmstart[k][7:])['ee_pos'])
+        print('hrFootPos = ', fk_HR(q=q_warmstart[k][7:])['ee_pos'], '\n')
     model = CentroidalPlusLegKinematicsCasadiModel(conf)
     solver = CentroidalPlusLegKinematicsAcadosSolver(model, x_warmstart, u_warmstart)
     x, u = solver.solve()
+    print(x.shape)
     robot = conf.solo12.robot
     if conf.WITH_MESHCAT_DISPLAY:
         viz = pin.visualize.MeshcatVisualizer(
@@ -460,5 +461,5 @@ if __name__ == "__main__":
         viz.loadViewerModel()
         for k in range(x.shape[0]):
             for j in range(10):
-                q = np.concatenate([x[k, 9:]])        
+                q = np.concatenate([q_warmstart[k][:7], x[k, 9:]])        
                 viz.display(q)
