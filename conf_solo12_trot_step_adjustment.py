@@ -1,17 +1,16 @@
-import os
 import numpy as np
 import pinocchio as pin 
 import example_robot_data 
 from contact_plan import create_contact_sequence
-from robot_properties_solo.solo12wrapper import Solo12Config
 from casadi_kin_dyn import pycasadi_kin_dyn as cas_kin_dyn
-from casadi import Function
+from robot_properties_solo.solo12wrapper import Solo12Config
+
 # walking parameters:
 # -------------------
 dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'TROT',
-      'stepLength' : 0.,
+      'stepLength' : 0.12,
       'stepHeight' : 0.1,
       'stepKnots' : 15,
       'supportKnots' : 5,
@@ -39,14 +38,6 @@ lxn = 0.01  # foot length in negative x direction
 lyp = 0.01  # foot length in positive y direction
 lyn = 0.01  # foot length in negative y direction
 
-# get urdf path
-urdf_filename = solo12.urdf_filename
-urdf_path = os.path.join(
-      solo12.model_path, 
-      os.path.join(solo12.path, solo12.urdf_subpath), 
-      urdf_filename
-      )
-
 # centroidal state and control dimensions
 # ---------------------------------------
 n_u_per_contact = 3
@@ -56,38 +47,9 @@ n_u = 2*nq
 n_x = 9 + nq
 q0 = np.array(Solo12Config.initial_configuration.copy())
 q0[0] = 0.0
-print
-# pin.framesForwardKinematics(rmodel, rdata, q0[7:])
-urdf = open('/home/agazar/devel/workspace/src/SNMPC/solo12.urdf', 'r').read()
-# pin.ccrba(rmodel, rdata, q0, np.zeros(rmodel.nv))
-# print(rdata.Ag.shape)
-# print(rmodel.nv)
+urdf = open('solo12.urdf', 'r').read()
 kindyn = cas_kin_dyn.CasadiKinDyn(urdf)
 joint_names = kindyn.joint_names()
-print(joint_names)
-print(urdf_filename)
-print(urdf_path)
-# if 'universe' in joint_names: joint_names.remove('universe')
-# if 'floating_base_joint' in joint_names: joint_names.remove('floating_base_joint')
-fk_FL = Function.deserialize(kindyn.fk(ee_frame_names[0]))
-fk_FR = Function.deserialize(kindyn.fk(ee_frame_names[1]))
-fk_HL = Function.deserialize(kindyn.fk(ee_frame_names[2]))
-fk_HR = Function.deserialize(kindyn.fk(ee_frame_names[3]))
-print('flFootPos = ', fk_FL(q=q0)['ee_pos'])
-print('frFootPos = ', fk_FR(q=q0)['ee_pos'])
-print('hlFootPos = ', fk_HL(q=q0)['ee_pos'])
-print('hrFootPos = ', fk_HR(q=q0)['ee_pos'])
-
-# pin.framesForwardKinematics(rmodel, rdata, q0)
-# hlFootPos = rdata.oMf[rmodel.getFrameId(ee_frame_names[2])].translation
-# hrFootPos = rdata.oMf[rmodel.getFrameId(ee_frame_names[3])].translation
-# flFootPos = rdata.oMf[rmodel.getFrameId(ee_frame_names[0])].translation
-# frFootPos = rdata.oMf[rmodel.getFrameId(ee_frame_names[1])].translation
-# print('flFootPos = ', flFootPos)
-# print('frFootPos = ', frFootPos)
-# print('hlFootPos = ', hlFootPos)
-# print('hrFootPos = ', hrFootPos)
-
 gait_templates, contact_sequence =\
      create_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0)
 # planning and control horizon lengths:
@@ -124,22 +86,26 @@ beta_u = 0.01 # probability of constraint violation
 
 # centroidal cost objective weights:
 # ----------------------------------
-state_cost_weights = np.diag([5e1, 5e1, 5e1,  #com
-                              1e2, 1e2, 1e2,  #linear_momentum 
-                              1e2, 1e2, 1e2,  #angular_momentum 
-                              1e3, 1e3, 1e3,  #q_FL 
-                              1e3, 1e3, 1e3,  #q_FR
-                              1e3, 1e3, 1e3,  #q_HL
-                              1e3, 1e3, 1e3]) #q_HR
+state_cost_weights = np.diag([5e1, 5e1, 5e1,       #com
+                              1e2, 1e2, 1e2,       #linear_momentum 
+                              1e2, 1e2, 1e2,       #angular_momentum 
+                              1e-1,1e-1,1e-1,1e-1, #base position 
+                              1e1, 1e1, 1e1,       #base orientation
+                              1e3, 1e3, 1e3,       #q_FL 
+                              1e3, 1e3, 1e3,       #q_FR
+                              1e3, 1e3, 1e3,       #q_HL
+                              1e3, 1e3, 1e3])      #q_HR
 
-control_cost_weights = np.diag([5e0, 1e0, 1e0,    #FL_forces
-                                5e0, 1e0, 1e0,    #FR_forces
-                                5e0, 1e0, 1e0,    #HL_forces
-                                5e0, 1e0, 1e0,    #HR_forces
-                                1e1, 1e1, 1e1, #qdot_FL
-                                1e1, 1e1, 1e1, #qdot_FR
-                                1e1, 1e1, 1e1, #qdot_HL
-                                1e1, 1e1, 1e1  #qdot_HR
+control_cost_weights = np.diag([5e0, 1e0, 1e0,     #FL_forces
+                                5e0, 1e0, 1e0,     #FR_forces
+                                5e0, 1e0, 1e0,     #HL_forces
+                                5e0, 1e0, 1e0,     #HR_forces
+                                1e-1, 1e-1, 1e-1,  #base linear velocity
+                                1e0, 1e0, 1e0,     #base angular velocity  
+                                1e1, 1e1, 1e1,     #qdot_FL
+                                1e1, 1e1, 1e1,     #qdot_FR
+                                1e1, 1e1, 1e1,     #qdot_HL
+                                1e1, 1e1, 1e1      #qdot_HR
                                 ]) 
 # whole-body cost objective weights:
 # ---------------------------------- 
