@@ -86,21 +86,21 @@ beta_u = 0.01 # probability of constraint violation
 
 # centroidal cost objective weights:
 # ----------------------------------
-state_cost_weights = np.diag([5e1, 5e1, 5e1,       #com
-                              1e2, 1e2, 1e2,       #linear_momentum 
+state_cost_weights = np.diag([1e1, 1e1, 1e1,       #com
+                              1e0, 1e0, 1e0,       #linear_momentum 
                               1e2, 1e2, 1e2,       #angular_momentum 
                               1e-1,1e-1,1e-1,1e-1, #base position 
                               1e1, 1e1, 1e1,       #base orientation
-                              1e3, 1e3, 1e3,       #q_FL 
-                              1e3, 1e3, 1e3,       #q_FR
-                              1e3, 1e3, 1e3,       #q_HL
-                              1e3, 1e3, 1e3])      #q_HR
+                              5e2, 5e2, 5e2,       #q_FL 
+                              5e2, 5e2, 5e2,       #q_FR
+                              5e2, 5e2, 5e2,       #q_HL
+                              5e2, 5e2, 5e2])      #q_HR
 
 control_cost_weights = np.diag([5e0, 1e0, 1e0,     #FL_forces
                                 5e0, 1e0, 1e0,     #FR_forces
                                 5e0, 1e0, 1e0,     #HL_forces
                                 5e0, 1e0, 1e0,     #HR_forces
-                                1e-1, 1e-1, 1e-1,  #base linear velocity
+                                1e-2, 1e-2, 1e-2,  #base linear velocity
                                 1e0, 1e0, 1e0,     #base angular velocity  
                                 1e1, 1e1, 1e1,     #qdot_FL
                                 1e1, 1e1, 1e1,     #qdot_FR

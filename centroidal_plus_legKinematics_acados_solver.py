@@ -27,9 +27,9 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.nx = self.acados_model.x.size()[0]
         self.nu = self.acados_model.u.size()[0]
         self.ny = self.nx + self.nu
-        if model._robot_type == 'QUADRUPED_PLUS_LEG_KINEMATICS':
+        if model._robot_type == 'QUADRUPED':
             self.nb_contacts = 4
-        elif model._robot_type == 'HUMANOID_PLUS_LEG_KINEMATICS':
+        elif model._robot_type == 'HUMANOID':
             self.nb_contacts = 2    
         # create optimal control problem
         self.ocp = AcadosOcp()
@@ -48,7 +48,9 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         if MPC:
             self.__generate_mpc_refs()
         # create Acados solver
-        self.acados_solver = AcadosOcpSolver(self.ocp, json_file="acados_ocp.json")
+        self.acados_solver = AcadosOcpSolver(
+            self.ocp, json_file="acados_ocp.json", build=True, generate=True
+            )
         if WARM_START:
             self.__warm_start(x_ref, u_ref)
 
@@ -71,7 +73,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
     def __fill_ocp_cost(self):
         cost = self.ocp.cost
         ny, nx, nu = self.ny, self.nx, self.nu
-        nh = self.casadi_model.constraints.lb.shape[0] 
         # coefficient matrices
         Vx = np.zeros((ny, nx))
         Vx[:nx, :] = np.eye(nx)
@@ -138,18 +139,18 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.ocp.solver_options.tf = N*self.dt
         self.ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         # self.ocp.solver_options.hessian_approx = "EXACT"
-        self.ocp.solver_options.integrator_type = "ERK"
+        self.ocp.solver_options.integrator_type = "IRK"
         self.ocp.solver_options.sim_method_num_stages = 1
         self.ocp.solver_options.sim_method_num_steps = 1
         # self.ocp.solver_options.sim_method_newton_iter = 1
-        self.ocp.solver_options.print_level = 2
+        self.ocp.solver_options.print_level = 0
         # self.ocp.solver_options.qp_solver_cond_N = N
         # ocp.solver_options.sim_method_newton_iter = 10
         ## ---------------------
         ##  NLP solver settings
         ## ---------------------
-        self.ocp.solver_options.nlp_solver_type = "SQP"
-        # self.ocp.solver_options.nlp_solver_type = "SQP_RTI"
+        # self.ocp.solver_options.nlp_solver_type = "SQP"
+        self.ocp.solver_options.nlp_solver_type = "SQP_RTI"
         self.ocp.solver_options.nlp_solver_tol_stat = 1e-3
         self.ocp.solver_options.nlp_solver_tol_eq = 1e-3
         self.ocp.solver_options.nlp_solver_tol_ineq = 1e-3
@@ -163,19 +164,12 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # --------------------
         self.ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
         # self.ocp.solver_options.levenberg_marquardt = 1e-6
-        # self.ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_OSQP"
         self.ocp.solver_options.qp_solver_warm_start = True
         # self.ocp.solver_options.print_level = 1
-        # self.ocp.solver_options.qp_solver_tol_stat = 1e-14
-        # self.ocp.solver_options.qp_solver_tol_eq = 1e-4
-        # self.ocp.solver_options.qp_solver_tol_ineq = 1e-9
-        # self.ocp.solver_options.qp_solver_tol_comp = 1e-4
-        # self.ocp.solver_options.nlp_solver_max_iter=0
-        # self.ocp.solver_options.qp_solver_iter_max = 10
 
     def __generate_mpc_refs(self):
         nb_contacts, N_mpc = self.nb_contacts, self.N_mpc
-        self.x_ref_mpc = self.x_init[:self.N_traj+1]
+        self.x_ref_mpc = self.x_init[:self.N_traj]
         contacts_logic_final = \
             self.contact_data['contacts_logic'][-1].reshape(1, nb_contacts)
         contacts_position_final = \
@@ -201,65 +195,11 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         if self.RECEEDING_HORIZON:
             N = N_mpc
         else:
-            N = N_traj    
+            N = N_traj 
         for time_idx in range(N):
             solver.set(time_idx, 'x', x_ref_N[time_idx])
             solver.set(time_idx, 'u', u_ref_N[time_idx])
-        x_ref_terminal = x_ref_N[-1]
-        solver.set(N, 'x', x_ref_terminal) 
-
-    def update_ocp(self, time_idx, x0):
-        # trajectory references
-        N_traj, N_mpc = self.N_traj, self.N_mpc
-        contacts_logic = self.contact_data['contacts_logic']
-        contacts_position = self.contact_data['contacts_position']
-        contacts_norms = self.contact_data['contacts_orient']
-        x_ref_mpc = self.x_ref_mpc
-        # get acados solver object
-        solver = self.acados_solver
-        # get horizon references 
-        horizon_range = range(time_idx,time_idx+N_mpc)
-        x_ref_N = x_ref_mpc[horizon_range] 
-        contacts_logic_N = contacts_logic[horizon_range]
-        contacts_position_N = contacts_position[horizon_range] 
-        contacts_norms_N = contacts_norms[horizon_range]
-        # OCP loop
-        for mpc_time_idx in range(N_mpc):
-            x_ref_k = x_ref_N[mpc_time_idx]
-            y_ref_k = np.concatenate([x_ref_k, np.zeros(self.nu)])
-            contacts_logic_k = contacts_logic_N[mpc_time_idx]
-            contacts_position_k = contacts_position_N[mpc_time_idx]
-            contacts_norms_k = contacts_norms_N[mpc_time_idx].flatten()
-            contact_params_k = np.concatenate(
-                [contacts_logic_k,contacts_position_k, contacts_norms_k]
-                )            
-            # update paramters and tracking cost
-            solver.set(mpc_time_idx, 'p', contact_params_k)
-            solver.cost_set(mpc_time_idx,'yref', y_ref_k)
-        x_ref_terminal = x_ref_mpc[time_idx+N_mpc]
-        # terminal constraints
-        self.ocp.constraints.idxbx_e = np.array(range(self.nx))
-        self.ocp.constraints.lbx_e = x_ref_terminal 
-        self.ocp.constraints.ubx_e = x_ref_terminal     
-        # update terminal cost
-        solver.cost_set(N_mpc,'yref', x_ref_terminal)
-        # solve OCP
-        print('\n'+'=' * 50)
-        print('MPC Iteration ' + str(time_idx))
-        print('-' * 50)
-        # update initial conditon
-        solver.set(0, "lbx", x0)
-        solver.set(0, "ubx", x0)
-        if self.ocp.solver_options.nlp_solver_type == 'SQP_RTI':
-            # QP preparation rti_phase:
-            print('starting RTI preparation phase ' + '...')
-            solver.options_set('rti_phase', 1)
-            t_prep = time.time()
-            status = solver.solve()
-            elapsed_prep = time.time() - t_prep
-            self.elapsed_prep = elapsed_prep
-        else:
-            self.elapsed_prep = 0
+        solver.set(N, 'x', x_ref_N[N]) 
 
     def run_mpc(self):
         # trajectory references
@@ -284,12 +224,11 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             horizon_range = range(traj_time_idx, traj_time_idx+N_mpc)
             x_ref_N = x_ref_mpc[horizon_range] 
             contacts_logic_N = contacts_logic[horizon_range]
-            contacts_position_N = contacts_position[horizon_range] 
             contacts_norms_N = contacts_norms[horizon_range]
+            contacts_position_N = contacts_position[horizon_range] 
             # OCP loop
             for mpc_time_idx in range(N_mpc):
                 x_ref_k = x_ref_N[mpc_time_idx]
-                y_ref_k = np.concatenate([x_ref_k, np.zeros(self.nu)])
                 contacts_logic_k = contacts_logic_N[mpc_time_idx]
                 contacts_position_k = contacts_position_N[mpc_time_idx]
                 contacts_norms_k = contacts_norms_N[mpc_time_idx].flatten()
@@ -297,21 +236,16 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     [contacts_logic_k, contacts_position_k, contacts_norms_k]
                     )            
                 # update paramters and tracking cost
+                y_ref_k = np.concatenate([x_ref_k, np.zeros(self.nu)])
                 solver.set(mpc_time_idx, 'p', contact_params_k)
-                solver.cost_set(mpc_time_idx,'yref', y_ref_k)
-                # warm-start solver from the presious shifted solution 
-                # if traj_time_idx > 0:
-                #     solver.set(mpc_time_idx, 'x', x_sol[mpc_time_idx+1])
-            x_ref_terminal = x_ref_mpc[traj_time_idx+N_mpc]
-            # if traj_time_idx > 80:
-            #     print("node no. ", traj_time_idx,": ", x_ref_terminal[3])
-            #     print(solver.get(1, 'x'))
+                solver.cost_set(mpc_time_idx,'yref', y_ref_k)    
             # terminal constraints
-            self.ocp.constraints.idxbx_e = np.array(range(self.nx))
-            self.ocp.constraints.lbx_e = x_ref_terminal 
-            self.ocp.constraints.ubx_e = x_ref_terminal     
+            # x_ref_terminal = x_ref_mpc[traj_time_idx+N_mpc]
+            # self.ocp.constraints.idxbx_e = np.array(range(self.nx))
+            # self.ocp.constraints.lbx_e = x_ref_terminal 
+            # self.ocp.constraints.ubx_e = x_ref_terminal     
             # update terminal cost
-            solver.cost_set(N_mpc,'yref', x_ref_terminal)
+            solver.cost_set(N_mpc,'yref', x_ref_k)
             # solve OCP
             print('\n'+'=' * 50)
             print('MPC Iteration ' + str(traj_time_idx))
@@ -364,46 +298,65 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         if self.RECEEDING_HORIZON:
             X_sim, U_sim = self.run_mpc()
         else:
-            x_ref_N, N = self.x_init, self.N_traj
+            N = self.N_traj
+            x_ref_N= self.x_init
             u_ref_N = self.u_ref
+            x_warm_start_N = x_ref_N
+            u_warm_start_N = u_ref_N
             contacts_logic_N = self.contact_data['contacts_logic']
             contacts_position_N = self.contact_data['contacts_position'] 
             contacts_norms_N = self.contact_data['contacts_orient']
-            ocp, solver = self.ocp, self.acados_solver
-            # set stage references
-            for time_idx in range(N):
-                x_ref_k = x_ref_N[time_idx]
-                y_ref_k = np.concatenate([x_ref_k, np.zeros(self.nu)])
-                contacts_logic_k = contacts_logic_N[time_idx]
-                contacts_position_k = contacts_position_N[time_idx]
-                contacts_norms_k = contacts_norms_N[time_idx].flatten()
-                contact_params_k = np.concatenate(
-                    [contacts_logic_k, contacts_position_k, contacts_norms_k]
-                    )            
-                solver.set(time_idx, 'p', contact_params_k)
-                solver.cost_set(time_idx,'yref', y_ref_k)
-                # warm-start 
-                solver.set(time_idx, 'x', x_ref_k)
-            # # set terminal references
-            x_ref_terminal = x_ref_N[N]
-            solver.cost_set(N,'yref', x_ref_terminal)
-            # terminal constraints
-            # self.ocp.constraints.idxbx_e = np.array(range(self.nx))
-            # self.ocp.constraints.lbx_e = x_ref_terminal 
-            # self.ocp.constraints.ubx_e = x_ref_terminal      
-            # solve ocp
-            t = time.time()
-            status = solver.solve()
-            # solver.print_statistics()
-            if status == 0:
-                elapsed = time.time() - t
-                print("HOORAY found a solution after :", elapsed, "seconds")
-            else:
-                print('Acados solver failed with error status = ', status)
-            # save open-loop trajectories
-            X_sim = np.array([solver.get(i,"x") for i in range(N+1)])
-            U_sim = np.array([solver.get(i,"u") for i in range(N)])
+            solver = self.acados_solver
+            # solver main loop
+            for SQP_iter in range(100):
+                x_goal_ref = x_ref_N[-1]
+                x_goal_warm_start = x_warm_start_N[-1]
+                # set stage references
+                for time_idx in range(N):
+                    x_ref_k = x_ref_N[time_idx]
+                    x_warm_start_k = x_warm_start_N[time_idx]
+                    u_warm_start_k = u_warm_start_N[time_idx]
+                    y_ref_k = np.concatenate([x_ref_k,  u_ref_N[time_idx]])
+                    contacts_logic_k = contacts_logic_N[time_idx]
+                    contacts_position_k = contacts_position_N[time_idx]
+                    contacts_norms_k = contacts_norms_N[time_idx].flatten()
+                    contact_params_k = np.concatenate(
+                        [contacts_logic_k, contacts_position_k, contacts_norms_k]
+                        )            
+                    solver.set(time_idx, 'p', contact_params_k)
+                    solver.cost_set(time_idx,'yref', y_ref_k)
+                    # warm-start 
+                    solver.set(time_idx, 'x', x_warm_start_k)
+                    solver.set(time_idx, 'u', u_warm_start_k)
+                # set terminal references
+                solver.cost_set(N,'yref', x_goal_ref)
+                solver.set(N, 'x', x_goal_warm_start)
+                # terminal constraints
+                # self.ocp.constraints.idxbx_e = np.array(range(self.nx))
+                # self.ocp.constraints.lbx_e = x_ref_terminal 
+                # self.ocp.constraints.ubx_e = x_ref_terminal      
+                # solve ocp
+                t = time.time()
+                status = solver.solve()
+                # solver.print_statistics()
+                if status == 0:
+                    elapsed = time.time() - t
+                    print("HOORAY found a solution after :", elapsed, "seconds")
+                else:
+                    print('Acados solver failed with error status = ', status)
+                # save open-loop trajectories
+                X_sim = np.array([solver.get(i,"x") for i in range(N+1)])
+                U_sim = np.array([solver.get(i,"u") for i in range(N)])
+                print("difference between two SQP iterations = ", np.linalg.norm(X_sim - x_warm_start_N))
+                print("residuals after ", SQP_iter, "SQP_RTI iterations:\n", solver.get_residuals())
+                if np.linalg.norm(X_sim-x_warm_start_N) < 5e-4:
+                    print("YESSSSSSSSSSSSSSSSSSSSSSSSS !! .. breaking at SQP iteration number: ", SQP_iter)
+                    break
+                else:
+                    x_warm_start_N = X_sim
+                    u_warm_start_N = U_sim    
         return X_sim, U_sim    
+ 
  
 if __name__ == "__main__":
     from centroidal_plus_legKinematics_casadi_model import CentroidalPlusLegKinematicsCasadiModel
@@ -424,26 +377,9 @@ if __name__ == "__main__":
     u_warmstart = []
     for k in range(len(centroidal_warmstart)):
         x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k]]))
-        u_warmstart.append(np.concatenate([np.zeros(12), qdot_warmstart[k]]))
-        pin.framesForwardKinematics(conf.rmodel, conf.rdata, q_warmstart[k])
-        hlFootPos = conf.rdata.oMf[conf.rmodel.getFrameId(conf.ee_frame_names[2])].translation
-        hrFootPos = conf.rdata.oMf[conf.rmodel.getFrameId(conf.ee_frame_names[3])].translation
-        flFootPos = conf.rdata.oMf[conf.rmodel.getFrameId(conf.ee_frame_names[0])].translation
-        frFootPos = conf.rdata.oMf[conf.rmodel.getFrameId(conf.ee_frame_names[1])].translation
-        print('flFootPos = ', flFootPos)
-        print('frFootPos = ', frFootPos)
-        print('hlFootPos = ', hlFootPos)
-        print('hrFootPos = ', hrFootPos)
-        fk_FL = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[0]))
-        fk_FR = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[1]))
-        fk_HL = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[2]))
-        fk_HR = Function.deserialize(conf.kindyn.fk(conf.ee_frame_names[3]))
-        print('flFootPos = ', fk_FL(q=q_warmstart[k])['ee_pos'])
-        print('frFootPos = ', fk_FR(q=q_warmstart[k])['ee_pos'])
-        print('hlFootPos = ', fk_HL(q=q_warmstart[k])['ee_pos'])
-        print('hrFootPos = ', fk_HR(q=q_warmstart[k])['ee_pos'], '\n')
+        u_warmstart.append(np.concatenate([np.zeros(12), np.zeros(18)]))
     model = CentroidalPlusLegKinematicsCasadiModel(conf)
-    solver = CentroidalPlusLegKinematicsAcadosSolver(model, x_warmstart, u_warmstart)
+    solver = CentroidalPlusLegKinematicsAcadosSolver(model, x_warmstart, u_warmstart, MPC=True)
     x, u = solver.solve()
     robot = conf.solo12.robot
     if conf.WITH_MESHCAT_DISPLAY:
