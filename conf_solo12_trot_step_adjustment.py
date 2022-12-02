@@ -23,15 +23,14 @@ robot_name = 'solo12'
 ee_frame_names = ['FL_FOOT', 'FR_FOOT', 'HL_FOOT', 'HR_FOOT']
 solo12 = example_robot_data.ROBOTS[robot_name]()
 rmodel = solo12.robot.model
-# for i in rmodel.names:
-#       print(i)
 rmodel.type = 'QUADRUPED'
 rmodel.foot_type = 'POINT_FOOT'
 rdata = rmodel.createData()
 robot_mass = pin.computeTotalMass(rmodel)
 
 gravity_constant = -9.81 
-max_leg_length = 0.34                          
+max_leg_length = 0.34
+step_adjustment_bound = 0.1                          
 foot_scaling  = 1.
 lxp = 0.01  # foot length in positive x direction
 lxn = 0.01  # foot length in negative x direction
@@ -89,12 +88,12 @@ beta_u = 0.01 # probability of constraint violation
 state_cost_weights = np.diag([1e1, 1e1, 1e1,       #com
                               1e0, 1e0, 1e0,       #linear_momentum 
                               1e2, 1e2, 1e2,       #angular_momentum 
-                              1e-1,1e-1,1e-1,1e-1, #base position 
-                              1e1, 1e1, 1e1,       #base orientation
-                              5e2, 5e2, 5e2,       #q_FL 
-                              5e2, 5e2, 5e2,       #q_FR
-                              5e2, 5e2, 5e2,       #q_HL
-                              5e2, 5e2, 5e2])      #q_HR
+                              1e-1,1e-1,1e-1,      #base position 
+                              # 1e1, 1e1, 1e1,1e1       #base orientation
+                              1e3, 1e3, 1e3,       #q_FL 
+                              1e3, 1e3, 1e3,       #q_FR
+                              1e3, 1e3, 1e3,       #q_HL
+                              1e3, 1e3, 1e3])      #q_HR
 
 control_cost_weights = np.diag([5e0, 1e0, 1e0,     #FL_forces
                                 5e0, 1e0, 1e0,     #FR_forces
@@ -105,7 +104,8 @@ control_cost_weights = np.diag([5e0, 1e0, 1e0,     #FL_forces
                                 1e1, 1e1, 1e1,     #qdot_FL
                                 1e1, 1e1, 1e1,     #qdot_FR
                                 1e1, 1e1, 1e1,     #qdot_HL
-                                1e1, 1e1, 1e1      #qdot_HR
+                                1e1, 1e1, 1e1,     #qdot_HR
+                                1e-1,1e-1, 1e-1    # aux. control inputs
                                 ]) 
 # whole-body cost objective weights:
 # ---------------------------------- 

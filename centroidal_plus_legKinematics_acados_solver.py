@@ -20,13 +20,16 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.Q = model._state_cost_weights
         self.R = model._control_cost_weights
         # casadi model
+        self.model = model
         self.casadi_model = model.casadi_model
         # acados model
         self.__fill_acados_model()      
         # dimensions
         self.nx = self.acados_model.x.size()[0]
         self.nu = self.acados_model.u.size()[0]
-        self.ny = self.nx + self.nu
+        self.ny = self.nx + self.nu 
+        # contact location bound
+        self.step_bound = model._step_bound
         if model._robot_type == 'QUADRUPED':
             self.nb_contacts = 4
         elif model._robot_type == 'HUMANOID':
@@ -51,13 +54,13 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.acados_solver = AcadosOcpSolver(
             self.ocp, json_file="acados_ocp.json", build=True, generate=True
             )
-        if WARM_START:
-            self.__warm_start(x_ref, u_ref)
+        # if WARM_START:
+        #     self.__warm_start(x_ref, u_ref)
 
     def __fill_acados_model(self):
         acados_model = AcadosModel()
         acados_model.f_impl_expr = self.casadi_model.f_impl_expr
-        acados_model.f_expl_expr = self.casadi_model.f_expl_expr
+        # acados_model.f_expl_expr = self.casadi_model.f_expl_expr
         acados_model.name = self.casadi_model.model_name
         acados_model.xdot = self.casadi_model.xdot
         acados_model.x = self.casadi_model.x
@@ -71,8 +74,8 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.ocp.solver_options.__initialize_t_slacks = 0
     
     def __fill_ocp_cost(self):
-        cost = self.ocp.cost
         ny, nx, nu = self.ny, self.nx, self.nu
+        cost = self.ocp.cost
         # coefficient matrices
         Vx = np.zeros((ny, nx))
         Vx[:nx, :] = np.eye(nx)
@@ -94,11 +97,12 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         cost.Vu = Vu
 
     def __fill_ocp_constraints(self):
+        ocp = self.ocp
         # initial constraints
-        self.ocp.constraints.x0 = self.x_init[0] 
+        ocp.constraints.x0 = self.x_init[0] 
         if not self.RECEEDING_HORIZON:
             # initial constraints
-            self.ocp.constraints.x0 = self.x_init[0] 
+            ocp.constraints.x0 = self.x_init[0] 
             # terminal constraints
             # x_goal = self.x_init[-1]
             # self.ocp.constraints.idxbx_e = np.array(range(self.nx))
@@ -106,19 +110,29 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             # self.ocp.constraints.ubx_e = x_goal        
         if self.casadi_model.model_name == 'quadruped_centroidal_momentum_plus_leg_kinematics':
             nh = self.casadi_model.constraints.lb.shape[0] 
-            self.ocp.model.con_h_expr = self.casadi_model.constraints.expr
-            self.ocp.constraints.lh = self.casadi_model.constraints.lb
-            self.ocp.constraints.uh = self.casadi_model.constraints.ub
+            ocp.model.con_h_expr = self.casadi_model.constraints.expr
+            ocp.constraints.lh = self.casadi_model.constraints.lb
+            ocp.constraints.uh = self.casadi_model.constraints.ub
+            # linearized contact-location end-effector
+            ng = 12
+            ocp.constraints.C = np.zeros((ng, self.nx))
+            ocp.constraints.D = np.zeros((ng, self.nu))
+            ocp.constraints.lg = np.zeros(ng)
+            ocp.constraints.ug = np.zeros(ng)
+            # slack on general linear constraints
+            ocp.constraints.idxsg = np.array(range(ng))
+            ocp.constraints.lsg = np.zeros(ng)
+            ocp.constraints.usg = np.zeros(ng)
             # slacks on nonlinear constraints
             L2_pen = 1e4
             L1_pen = 1e0 #1e0
-            self.ocp.constraints.lsh = np.zeros(nh)
-            self.ocp.constraints.ush = np.zeros(nh)
-            self.ocp.constraints.idxsh = np.array(range(nh))
-            self.ocp.cost.Zl = L2_pen * np.ones(nh)
-            self.ocp.cost.Zu = L2_pen * np.ones(nh)
-            self.ocp.cost.zl = L1_pen * np.ones(nh)
-            self.ocp.cost.zu = L1_pen * np.ones(nh)
+            ocp.constraints.idxsh = np.array(range(nh))
+            ocp.constraints.lsh = np.zeros(nh)
+            ocp.constraints.ush = np.zeros(nh)
+            ocp.cost.Zl = L2_pen * np.ones(nh+ng)
+            ocp.cost.Zu = L2_pen * np.ones(nh+ng)
+            ocp.cost.zl = L1_pen * np.ones(nh+ng)
+            ocp.cost.zu = L1_pen * np.ones(nh+ng)
 
         elif self.casadi_model.model_name == 'flat_foot_humanoid_centroidal_momentum_plus_leg_kinematics':
             self.ocp.model.con_h_expr = vertcat(
@@ -298,15 +312,23 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         if self.RECEEDING_HORIZON:
             X_sim, U_sim = self.run_mpc()
         else:
+            nx = self.nx
             N = self.N_traj
-            x_ref_N= self.x_init
+            x_ref_N = self.x_init
             u_ref_N = self.u_ref
-            x_warm_start_N = x_ref_N
-            u_warm_start_N = u_ref_N
+            x_warm_start_N = np.copy(x_ref_N)
+            u_warm_start_N = np.copy(u_ref_N)
             contacts_logic_N = self.contact_data['contacts_logic']
             contacts_position_N = self.contact_data['contacts_position'] 
             contacts_norms_N = self.contact_data['contacts_orient']
             solver = self.acados_solver
+            nb_lateral_contact_loc_constr = self.nb_contacts*2
+            nb_vertical_contact_loc_constr = self.nb_contacts
+            model = self.model
+            # get forward kinematics and jacobians expressions
+            ee_fk = [model.fk_FR, model.fk_FL, model.fk_HR, model.fk_HL]
+            ee_jacobians = [model.J_FR, model.J_FL, model.J_HR, model.J_HL]
+            step_bound = self.step_bound
             # solver main loop
             for SQP_iter in range(100):
                 x_goal_ref = x_ref_N[-1]
@@ -314,20 +336,65 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                 # set stage references
                 for time_idx in range(N):
                     x_ref_k = x_ref_N[time_idx]
-                    x_warm_start_k = x_warm_start_N[time_idx]
+                    if SQP_iter == 0:
+                        x_warm_start_k = np.concatenate(
+                            [x_warm_start_N[time_idx][0:3], x_warm_start_N[time_idx][7:]]
+                        )
+                    else:    
+                        x_warm_start_k = x_warm_start_N[time_idx]
                     u_warm_start_k = u_warm_start_N[time_idx]
-                    y_ref_k = np.concatenate([x_ref_k,  u_ref_N[time_idx]])
+                    y_ref_k = np.concatenate(
+                        [x_warm_start_k, u_ref_N[time_idx]]
+                        )
                     contacts_logic_k = contacts_logic_N[time_idx]
                     contacts_position_k = contacts_position_N[time_idx]
                     contacts_norms_k = contacts_norms_N[time_idx].flatten()
-                    contact_params_k = np.concatenate(
-                        [contacts_logic_k, contacts_position_k, contacts_norms_k]
+                    params_k = np.concatenate(
+                        [contacts_logic_k, contacts_position_k, contacts_norms_k, x_ref_k[3:7]]
                         )            
-                    solver.set(time_idx, 'p', contact_params_k)
+                    solver.set(time_idx, 'p', params_k)
                     solver.cost_set(time_idx,'yref', y_ref_k)
                     # warm-start 
                     solver.set(time_idx, 'x', x_warm_start_k)
                     solver.set(time_idx, 'u', u_warm_start_k)
+                    # linearize contact location constraints
+                    qk = x_warm_start_k[:3]
+                    
+
+                    C_lateral = np.zeros((nb_lateral_contact_loc_constr, nx))
+                    lg_lateral = np.zeros(nb_lateral_contact_loc_constr)
+                    ug_lateral = np.zeros(nb_lateral_contact_loc_constr)
+                    C_vertical = np.zeros((nb_vertical_contact_loc_constr, nx))
+                    lg_vertical = np.zeros(nb_vertical_contact_loc_constr)
+                    ug_vertical = np.zeros(nb_vertical_contact_loc_constr)
+                    for contact_idx in range(self.nb_contacts):
+                        # lateral part (x-y direction)
+                        contact_position_param = contacts_position_k[contact_idx*3:(contact_idx*3)+3] 
+                        contact_jacobian = ee_jacobians[contact_idx](q=qk)['J']
+                        contact_logic = contacts_logic_k[contact_idx]
+                        Jk_times_qk = contact_jacobian @ qdot_k
+                        contact_fk = ee_fk[contact_idx](q=qk)['ee_pos']
+                        for lateral_constraint_idx in range(2):
+                            idx = contact_idx*2 + lateral_constraint_idx
+                            C_lateral[idx, 9:] = contact_logic*(
+                                contact_jacobian[lateral_constraint_idx]
+                                )
+                            temp = -contact_position_param[lateral_constraint_idx] \
+                                   -contact_fk[lateral_constraint_idx] \
+                                   +Jk_times_qk[lateral_constraint_idx]  
+                            lg_lateral[idx] = contact_logic*(temp - step_bound)
+                            ug_lateral[idx] = contact_logic*(temp + step_bound)
+                        # vertical part (z-direction)
+                        C_vertical[contact_idx, 9:] = contact_logic*(contact_jacobian[2])
+                        temp = contact_position_param[2] - contact_fk[2] + Jk_times_qk[2]
+                        lg_vertical[contact_idx] = contact_logic*temp 
+                        ug_vertical[contact_idx] = contact_logic*temp
+                    C_total = np.concatenate([C_lateral, C_vertical], axis=0)
+                    ub_total = np.concatenate([lg_lateral, lg_vertical], axis=0)
+                    lb_total = np.concatenate([ug_lateral, ug_vertical], axis=0)                   
+                    solver.constraints_set(time_idx, 'C', C_total, api='new')
+                    solver.constraints_set(time_idx, 'lg', lb_total)
+                    solver.constraints_set(time_idx, 'ug', ub_total)
                 # set terminal references
                 solver.cost_set(N,'yref', x_goal_ref)
                 solver.set(N, 'x', x_goal_warm_start)
@@ -377,9 +444,9 @@ if __name__ == "__main__":
     u_warmstart = []
     for k in range(len(centroidal_warmstart)):
         x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k]]))
-        u_warmstart.append(np.concatenate([np.zeros(12), np.zeros(18)]))
+        u_warmstart.append(np.concatenate([np.zeros(12), np.zeros(18), np.zeros(3)]))
     model = CentroidalPlusLegKinematicsCasadiModel(conf)
-    solver = CentroidalPlusLegKinematicsAcadosSolver(model, x_warmstart, u_warmstart, MPC=True)
+    solver = CentroidalPlusLegKinematicsAcadosSolver(model, x_warmstart, u_warmstart, MPC=False)
     x, u = solver.solve()
     robot = conf.solo12.robot
     if conf.WITH_MESHCAT_DISPLAY:

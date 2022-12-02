@@ -92,12 +92,47 @@ def compute_5th_order_poly_traj(x0, x1, T, dt):
         ddx[:,i] = 2*c + 6*d*t + 12*e*t**2 + 20*f*t**3
     return x, dx, ddx
 
+def quaternion_multiplication(q1, q2):
+    w1, v1 = q1[3], q1[0:3]
+    w2, v2 = q2[3], q2[0:3]
+    temp = w1*v2 + w2*v1 + (skew(v1) @ v2)  
+    result = MX.zeros(4)
+    result[0] = temp[0]
+    result[1] = temp[1]
+    result[2] = temp[2]
+    result[3] = w1*w2 - (v1.T @ v2)
+    return result
+
 def integrate_quaternion_casadi(q, omega):
     w1, v1 = q[3], q[0:3]
-    w2, v2 = 0., omega
-    temp = w1*v2 + w2*v1 + (skew(v1)@ v2)  
-    qdot = [temp[0], temp[1], temp[2], w1*w2 - (v1.T @ v2)]
-    return qdot
+    w2, v2 = 0., 0.5*omega
+    temp = w1*v2 + w2*v1 + (skew(v1) @ v2)
+    q_plus = MX.zeros(4)
+    q_plus[0] = temp[0]
+    q_plus[1] = temp[1]
+    q_plus[2] = temp[2]
+    q_plus[3] = w1*w2 - (v1.T @ v2)   
+    return q_plus
+
+def log_quaternion_casadi(q):
+    v_norm = norm_2(q[0:3])
+    q_norm = norm_2(q)
+    tolerance = 1e-17
+    q1 = MX.zeros(4)
+    q1[3] = log(q_norm)
+    q2 = MX.zeros(4)
+    q2[0] = (acos(q[3]/q_norm))*q[0]
+    q2[1] = (acos(q[3]/q_norm))*q[1]
+    q2[2] = (acos(q[3]/q_norm))*q[2]
+    q2[3] = log(q_norm)
+    return if_else(
+        v_norm < tolerance, q1, q2, True
+        )
+
+def log_map_casadi(q1, q2):
+   q2_conjucate = q2 
+   q2_conjucate[:3] = -1*q2_conjucate[:3] 
+   return log_quaternion_casadi(quaternion_multiplication(q2, q1)) 
 
 def quatToRot_casadi(q):
     R = SX.zeros(3, 3)
