@@ -103,16 +103,18 @@ def quaternion_multiplication(q1, q2):
     result[3] = w1*w2 - (v1.T @ v2)
     return result
 
-def integrate_quaternion_casadi(q, omega):
+def normalize_quaternion(q):
+    norm = np.sqrt((q[0]**2) + (q[1]**2) + (q[2]**2) + (q[3]**2))
+    return q/norm 
+
+def integrate_base_quaternion_casadi_fun(q, omega, dt):
     w1, v1 = q[3], q[0:3]
-    w2, v2 = 0., 0.5*omega
-    temp = w1*v2 + w2*v1 + (skew(v1) @ v2)
-    q_plus = MX.zeros(4)
-    q_plus[0] = temp[0]
-    q_plus[1] = temp[1]
-    q_plus[2] = temp[2]
-    q_plus[3] = w1*w2 - (v1.T @ v2)   
-    return q_plus
+    w2, v2 = 0., 0.5*dt*omega
+    v_next = w1*v2 + w2*v1 + (mtimes(skew(v1), v2))
+    return  Function(
+        'integrate_quaternion',
+        [q, omega], [vertcat(v_next, w1*w2 - (v1.T @ v2))]
+    )
 
 def log_quaternion_casadi(q):
     v_norm = norm_2(q[0:3])
@@ -147,6 +149,14 @@ def quatToRot_casadi(q):
     R[2, 1] = 2. * (qj * qk + qi * qr)
     R[2, 2] = 1. - 2. * (qi * qi + qj * qj)
     return R
+
+def rotToQuat_casadi(R):
+    q = MX.zeros(4)
+    q[0] = 0.5*sign(R[2, 1] - R[1, 2])*sqrt(R[0, 0] - R[1, 1] - R[2, 2] + 1)
+    q[1] = 0.5*sign(R[0, 2] - R[2, 0])*sqrt(R[1, 1] - R[2, 2] - R[0, 0] + 1)
+    q[2] = 0.5*sign(R[1, 0] - R[0, 1])*sqrt(R[2, 2] - R[0, 0] - R[1, 1] + 1)
+    q[3] = 0.5*sqrt(R[0, 0] + R[1, 1] + R[2, 2] + 1)    
+    return q
 
 def vec2sym_mat(vec, nx):
     # nx = (vec.shape[0])
