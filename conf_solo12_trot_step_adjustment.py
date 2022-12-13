@@ -10,7 +10,7 @@ from robot_properties_solo.solo12wrapper import Solo12Config
 dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'TROT',
-      'stepLength' : 0.15,
+      'stepLength' : 0.12,
       'stepHeight' : 0.05,
       'stepKnots' : 15,
       'supportKnots' : 5,
@@ -85,33 +85,42 @@ beta_u = 0.01 # probability of constraint violation
 
 # centroidal cost objective weights:
 # ----------------------------------
-state_cost_weights = np.diag([1e1, 1e1, 1e1,       #com
-                              1e0, 1e0, 1e0,       #linear_momentum 
-                              1e1, 1e1, 1e1,       #angular_momentum 
-                              1e0, 1e0, 1e0,      #base position 
-                              # 1e1, 1e1, 1e1,1e1  #base orientation
-                              1e2, 1e2, 1e2,       #q_FL 
-                              1e2, 1e2, 1e2,       #q_FR
-                              1e2, 1e2, 1e2,       #q_HL
-                              1e2, 1e2, 1e2])      #q_HR
+state_cost_weights = np.diag([5e1, 5e1, 5e1,       #com
+                              1e3, 1e3, 1e3,       #linear_momentum 
+                              1e5, 1e5, 1e5,       #angular_momentum 
+
+                              1e2, 1e2, 1e2,       #ee_FL_pos 
+                              1e2, 1e2, 1e2,       #ee_FR_pos
+                              1e2, 1e2, 1e2,       #ee_HL_pos
+                              1e2, 1e2, 1e2,       #ee_HR_pos
+
+                              1e1, 1e1, 1e1,       #ee_FL_vel 
+                              1e1, 1e1, 1e1,       #ee_FR_vel
+                              1e1, 1e1, 1e1,       #ee_HL_vel
+                              1e1, 1e1, 1e1])      #ee_HR_vel
+                         
 
 control_cost_weights = np.diag([5e0, 5e0, 1e0,     #FL_forces
                                 5e0, 5e0, 1e0,     #FR_forces
                                 5e0, 5e0, 1e0,     #HL_forces
                                 5e0, 5e0, 1e0,     #HR_forces
-                                1e-1, 1e-1, 1e-1,  #base linear velocity
-                                1e-1, 1e-1, 1e-1,     #base angular velocity  
-                                1e2, 1e2, 1e2,     #qdot_FL
-                                1e2, 1e2, 1e2,     #qdot_FR
-                                1e2, 1e2, 1e2,     #qdot_HL
-                                1e2, 1e2, 1e2      #qdot_HR
-                              #   1e-1,1e-1, 1e-1    # aux. control inputs
+
+                                1e-1, 1e-1, 1e-1,  #ee_FL_acc 
+                                1e-1, 1e-1, 1e-1,  #ee_FL_acc
+                                1e-1, 1e-1, 1e-1,  #ee_FL_acc
+                                1e-1, 1e-1, 1e-1   #ee_FL_acc
                                 ])
+
 swing_foot_cost_weights = np.diag([5e4, 1e4, 1e4,   #FL 
                                    5e4, 1e4, 1e4,   #FR
                                    5e4, 1e4, 1e4,   #HL
                                    5e4, 1e4, 1e4])  #HR                                 
-# whole-body cost objective weights:
+# Impedance controller
+# --------------------
+Kp = [200., 200., 200.]
+Kd = [10., 10., 10.]
+
+# croccodyl cost objective weights:
 # ---------------------------------- 
 freeFlyerQWeight = [0.]*3 + [500.]*3
 freeFlyerVWeight = [10.]*6

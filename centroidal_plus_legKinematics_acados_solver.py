@@ -1,5 +1,4 @@
 from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
-from utils import normalize_quaternion, log_map_casadi, rotToQuat_casadi
 import scipy.linalg as la
 from casadi import *
 import numpy as np
@@ -30,7 +29,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # dimensions
         self.nx = self.acados_model.x.size()[0]
         self.nu = self.acados_model.u.size()[0]
-        self.ny = self.nx + self.nu + self.S.shape[0]
+        self.ny = self.nx + self.nu 
         # contact location bound
         self.step_bound = model._step_bound
         if model._robot_type == 'QUADRUPED':
@@ -82,63 +81,27 @@ class CentroidalPlusLegKinematicsAcadosSolver:
     
     def __fill_ocp_cost(self):
         ny, nx, nu = self.ny, self.nx, self.nu
-        x, u = self.casadi_model.x, self.casadi_model.u
-        p = self.casadi_model.p
         cost = self.ocp.cost
         # coefficient matrices
-        # Vx = np.zeros((ny, nx))
-        # Vx[:nx, :] = np.eye(nx)
-        # Vu = np.zeros((ny, nu))
-        # Vu[nx:, :] = np.eye(nu)
+        Vx = np.zeros((ny, nx))
+        Vx[:nx, :] = np.eye(nx)
+        Vu = np.zeros((ny, nu))
+        Vu[nx:, :] = np.eye(nu)
         Vx_e = np.eye(nx)
         # cost function weights
-        Q, R, S = self.Q, self.R, self.S
-        # cost.W = la.block_diag(Q, R, S)
-        cost_W = la.block_diag(Q, R)
-        cost.W_e = Q       
+        Q, R  = self.Q, self.R
+        cost.W = la.block_diag(Q, R)
+        cost.W_e = Q 
+        # cost type      
+        cost.cost_type = 'LINEAR_LS'
+        cost.cost_type_e = 'LINEAR_LS'
         # initial state tracking reference
-        ee_fk_pos = self.model.casadi_model.fk_q_bar_pos
-        ee_fk_rot = self.model.casadi_model.fk_q_bar_rot
-        q_identity = MX([0.,0.,0., 1.0])
-        cost.cost_type = 'EXTERNAL'
-        cost.cost_type_e = 'EXTERNAL'
-        # com tracking cost
-        com_error = x[:3] - p[-15:-12]
-        com_cost = (.5*com_error.T @ Q[:3,:3]) @ com_error
-        # swing foot frame orientation cost
-        ee_orient_cost = []
-        for contact_idx in range(self.nb_contacts):
-            idx = contact_idx*3
-            ee_orient_cost = vertcat(
-                ee_orient_cost,
-                log_map_casadi(
-                    rotToQuat_casadi(ee_fk_rot[idx:idx+3, :]), q_identity)
-                )
-        # swing foot position tracking cost
-        ee_pos_error = ee_fk_pos - p[-12::]
-        ee_pos_cost = (.5*ee_pos_error.T @ S) @ ee_pos_error
-        # state regularization cost
-        state_reg_cost = (.5*x[3:].T @ Q[3:, 3:]) @ x[3:]   
-        # control regularization cost 
-        control_reg_cost = (.5*u.T @ R) @ u
-        self.ocp.model.cost_y_expr = vertcat(
-            com_cost, 
-            state_reg_cost, 
-            control_reg_cost,
-            ee_pos_cost,
-            ee_orient_cost
-        )
-        self.ocp.model.cost_y_expr_e = vertcat(com_cost, state_reg_cost)  
-        # cost.cost_type = "LINEAR_LS"
-        # cost.cost_type_e = "LINEAR_LS"
-        # initial state tracking reference
-        # cost.yref_e = np.zeros(nx)
-        # cost.yref = np.zeros(ny)
-        # cost.yref_e = np.zeros(nx)
-        # cost.yref = np.zeros(ny)
-        # cost.Vx_e = Vx_e
-        # cost.Vx = Vx
-        # cost.Vu = Vu
+        cost.yref = np.zeros(ny)
+        cost.yref_e = np.zeros(nx)
+        # fill cost matrices
+        cost.Vx_e = Vx_e
+        cost.Vx = Vx
+        cost.Vu = Vu
 
     def __fill_ocp_constraints(self):
         ocp = self.ocp
@@ -199,7 +162,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             N = self.N_traj    
         self.ocp.solver_options.tf = N*self.dt
         self.ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
-        # self.ocp.solver_options.ext_cost_num_hess = 1
         self.ocp.solver_options.integrator_type = "ERK"
         self.ocp.solver_options.sim_method_num_stages = 1
         self.ocp.solver_options.sim_method_num_steps = 1
@@ -270,7 +232,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.frFootId = self.rmodel.getFrameId(frame_names[1])
         self.hlFootId = self.rmodel.getFrameId(frame_names[2])
         self.hrFootId = self.rmodel.getFrameId(frame_names[3])
-
 
     def __create_swing_foot_cost_ref(self):
         q0 = self.model._q0
@@ -470,24 +431,28 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             nb_lateral_contact_loc_constr = self.nb_contacts*2
             nb_vertical_contact_loc_constr = self.nb_contacts
             model = self.model
-            # get forward kinematics and jacobians expressions
-            ee_fk = [model.fk_FR, model.fk_FL, model.fk_HR, model.fk_HL]
-            ee_jacobians = [model.J_FR, model.J_FL, model.J_HR, model.J_HL]
             step_bound = self.step_bound
             swing_feet_tasks = self.swing_feet_tasks
             com_tasks = self.com_tasks
-            q0_base_N = []
             # solver main loop
             for SQP_iter in range(100):
                 for time_idx in range(N):
                     # get stage and terminal references
                     x_ref_k = np.concatenate(
-                            [x_ref_N[time_idx][:12],
-                             x_ref_N[time_idx][16:]]
+                            [x_ref_N[time_idx],
+                             swing_feet_tasks[time_idx][0].translation,
+                             swing_feet_tasks[time_idx][1].translation,
+                             swing_feet_tasks[time_idx][2].translation,
+                             swing_feet_tasks[time_idx][3].translation,
+                             np.zeros(12)]
                         )
                     x_ref_goal = np.concatenate(
                             [x_ref_N[-1][:12], 
-                             x_ref_N[-1][16:]]
+                             swing_feet_tasks[-1][0].translation,
+                             swing_feet_tasks[-1][1].translation,
+                             swing_feet_tasks[-1][2].translation,
+                             swing_feet_tasks[-1][3].translation,
+                             np.zeros(12)]
                         )     
                     if SQP_iter == 0:
                         x_warm_start_k = x_ref_k
@@ -495,31 +460,17 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     else:    
                         x_warm_start_k = x_warm_start_N[time_idx]
                         x_warm_start_goal = x_warm_start_N[-1]
-
                     u_warm_start_k = u_warm_start_N[time_idx]
                     y_ref_k = np.concatenate(
-                        [com_tasks[time_idx],
-                        np.zeros(9),
-                        x_ref_k[12:],
-                        np.zeros(12),
-                        np.zeros(6), 
-                        u_warm_start_N[time_idx][18:], 
-                        swing_feet_tasks[time_idx][0].translation,
-                        swing_feet_tasks[time_idx][1].translation,
-                        swing_feet_tasks[time_idx][2].translation,
-                        swing_feet_tasks[time_idx][3].translation]
+                        [x_ref_k,
+                        np.zeros(nu)]
                         )
                     # get contact parameters
                     contacts_logic_k = contacts_logic_N[time_idx]
                     contacts_position_k = contacts_position_N[time_idx]
-                    contacts_norms_k = contacts_norms_N[time_idx].flatten()
-                    # get base orientation reference 
-                    if SQP_iter == 0:
-                        q0_base_k =  x_ref_N[time_idx][12:16]
-                    else:
-                        q0_base_k = np.array(q0_base_N[time_idx]).squeeze() 
+                    contacts_norms_k = contacts_norms_N[time_idx].flatten()                    
                     params_k = np.concatenate(
-                        [contacts_logic_k, contacts_position_k, contacts_norms_k, q0_base_k]
+                        [contacts_logic_k, contacts_position_k, contacts_norms_k]
                     )      
                     solver.set(time_idx, 'p', params_k)
                     solver.cost_set(time_idx,'yref', y_ref_k)
@@ -620,15 +571,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     if np.linalg.norm(residuals[2]) < 1e-3:
                         print("YESSSSSSSSSSSSSSSSSSSSSSSSS !! .. breaking at SQP iteration number: ", SQP_iter)
                         break
-                # integrate base based on current solution of omega and q0_base
-                for j in range(N):
-                    if SQP_iter == 0:
-                        q0_base_N += [x_ref_N[time_idx][12:16]]
-                    else:     
-                        q0_plus = self.casadi_model.integrate_base(
-                            normalize_quaternion(q0_base_N[j]), U_sim[j, 15:18]
-                        )
-                        q0_base_N[j] = q0_plus   
                 x_warm_start_N = X_sim
                 u_warm_start_N = U_sim    
         return X_sim, U_sim    
@@ -652,8 +594,8 @@ if __name__ == "__main__":
     x_warmstart = []
     u_warmstart = []
     for k in range(len(centroidal_warmstart)):
-        x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k]]))
-        u_warmstart.append(np.concatenate([np.zeros(12), qdot_warmstart[k]]))
+        x_warmstart.append(centroidal_warmstart[k])
+        u_warmstart.append(np.zeros(24))
     model = CentroidalPlusLegKinematicsCasadiModel(conf)
     solver = CentroidalPlusLegKinematicsAcadosSolver(model, x_warmstart, u_warmstart, MPC=False)
     x, u = solver.solve()
