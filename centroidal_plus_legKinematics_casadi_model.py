@@ -256,6 +256,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
                     x[21:],
                     u[12:]
                     )
+        # construct             
         # friction pyramid constraints
         friction_pyramid_mat = construct_friction_pyramid_constraint_matrix(self)
         cone_constraints_fr = \
@@ -326,22 +327,23 @@ class CentroidalPlusLegKinematicsCasadiModel:
         model.contacts_params = contacts_params
         # concatenate constraints    
         constraints.expr = vertcat(
-            A_frame_acceleration,
+            A_friction_pyramid,
             A_contact_location_vertical,
             A_contact_location_lateral,
-            A_friction_pyramid, 
+            A_frame_acceleration,
+ 
             )
         constraints.lb = np.hstack([
-            lb_frame_acceleration,
+            lb_friction_pyramid,
             lb_contact_location_vertical,
             lb_contact_location_lateral,
-            lb_friction_pyramid,
+            lb_frame_acceleration,
         ])
         constraints.ub = np.hstack([
-            ub_frame_acceleration,
+            ub_friction_pyramid,
             ub_contact_location_vertical,
             ub_contact_location_lateral,
-            ub_friction_pyramid,
+            ub_frame_acceleration,
         ])
         model.constraints = constraints
         self.casadi_model = model

@@ -134,8 +134,8 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             # ocp.constraints.lsg = np.zeros(ng)
             # ocp.constraints.usg = np.zeros(ng)
             # slacks on nonlinear constraints
-            L2_pen = 1e6
-            L1_pen = 1e0 #1e0
+            L2_pen = 1e1
+            L1_pen = 1e3 #1e0
             ocp.constraints.idxsh = np.array(range(12, nh))
             ocp.constraints.lsh = np.zeros(nh-12)
             ocp.constraints.ush = np.zeros(nh-12)
@@ -162,7 +162,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             N = self.N_traj    
         self.ocp.solver_options.tf = N*self.dt
         self.ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
-        self.ocp.solver_options.integrator_type = "ERK"
+        self.ocp.solver_options.integrator_type = "IRK"
         self.ocp.solver_options.sim_method_num_stages = 1
         self.ocp.solver_options.sim_method_num_steps = 1
         # self.ocp.solver_options.sim_method_newton_iter = 1
