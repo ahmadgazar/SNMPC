@@ -92,6 +92,11 @@ def compute_5th_order_poly_traj(x0, x1, T, dt):
         ddx[:,i] = 2*c + 6*d*t + 12*e*t**2 + 20*f*t**3
     return x, dx, ddx
 
+
+# def normalize_quaternion(q):
+#     norm = np.sqrt((q[0]**2) + (q[1]**2) + (q[2]**2) + (q[3]**2))
+#     return q/norm 
+
 def quaternion_multiplication(q1, q2):
     w1, v1 = q1[3], q1[0:3]
     w2, v2 = q2[3], q2[0:3]
@@ -103,38 +108,104 @@ def quaternion_multiplication(q1, q2):
     result[3] = w1*w2 - (v1.T @ v2)
     return result
 
-def normalize_quaternion(q):
-    norm = np.sqrt((q[0]**2) + (q[1]**2) + (q[2]**2) + (q[3]**2))
-    return q/norm 
-
-def integrate_base_quaternion_casadi_fun(q, omega, dt):
-    w1, v1 = q[3], q[0:3]
-    w2, v2 = 0., 0.5*dt*omega
-    v_next = w1*v2 + w2*v1 + (mtimes(skew(v1), v2))
-    return  Function(
-        'integrate_quaternion',
-        [q, omega], [vertcat(v_next, w1*w2 - (v1.T @ v2))]
+def quaternion_plus_casadi_fun():
+    q1 = MX.sym('q', 4, 1)
+    omega = MX.sym('w', 3, 1)
+    # w1, v1 = q[3], q[0:3]
+    q2 = vertcat(0.5*omega, 0.)
+    # v_next = w1*v2 + w2*v1 + (mtimes(skew(v1), v2))
+    return Function(
+        'quaternion_plus',
+        [q1, omega], 
+        [quaternion_multiplication(q1, q2)]
     )
 
-def log_quaternion_casadi(q):
-    v_norm = norm_2(q[0:3])
-    q_norm = norm_2(q)
-    tolerance = 1e-17
-    q1 = MX.zeros(4)
-    q1[3] = log(q_norm)
-    q2 = MX.zeros(4)
-    q2[0] = (acos(q[3]/q_norm))*q[0]
-    q2[1] = (acos(q[3]/q_norm))*q[1]
-    q2[2] = (acos(q[3]/q_norm))*q[2]
-    q2[3] = log(q_norm)
+# def log_quaternion_casadi(q):
+#     v_norm = norm_2(q[0:3])
+#     q_norm = norm_2(q)
+#     tolerance = 1e-6
+#     q1 = MX.zeros(4)
+#     q1[3] = log(q_norm)
+#     q2 = MX.zeros(4)
+#     q2[0] = (acos(q[3]/q_norm))*q[0]
+#     q2[1] = (acos(q[3]/q_norm))*q[1]
+#     q2[2] = (acos(q[3]/q_norm))*q[2]
+#     q2[3] = log(q_norm)
+#     return if_else(
+#         v_norm < tolerance, q1, q2, False
+#         )
+
+# def quaternion_minus_casadi_fun():
+#    q1 = MX.sym('q1', 4, 1)
+#    q2 = MX.sym('q2', 4, 1)
+#    q2conjugate = vertcat(-q2[0], -q2[1], -q2[2], q2[3])
+#    dq = quaternion_multiplication(q2conjugate, q1)
+#    return Function(
+#         'quaternion_minus',
+#         [q1, q2],
+#         [log_quaternion_casadi(dq)]
+#         )
+
+def exp_quaternion_casadi(w):
+    q1exp = MX.zeros(4)
+    q2exp = MX.zeros(4)
+    th = norm_2(w)
+    # taylor expansion
+    q1exp[:3] = w*(1-(th**2)/6)
+    q1exp[3] = 1-(th**2)/2
+    q2exp[:3] = (w/th)*np.sin(th) 
+    q2exp[3] = np.cos(th)
     return if_else(
-        v_norm < tolerance, q1, q2, True
+        th ** 2 <= 1.0e-6, q1exp, q2exp, True
         )
 
-def log_map_casadi(q1, q2):
-   q2_conjucate = q2 
-   q2_conjucate[:3] = -1*q2_conjucate[:3] 
-   return log_quaternion_casadi(quaternion_multiplication(q2, q1)) 
+def log_quaternion_casadi(q):
+    """ lives on the tangent space of SO(3) """
+    v = q[:3]
+    w = q[3]
+    vnorm = norm_2(v)
+    q1log = 2*v / w*(1 - vnorm**2 / (3 * w**2))
+    q2log = (2*atan2(vnorm, w)*v) / vnorm
+    return if_else (
+        vnorm <= 1.0e-6, q1log, q2log, True
+        )
+
+def quaternion_product_casadi(q1, q2):
+    """ computes quaternion product of q1 x q2 """
+    v = cross(q1[:3], q2[:3]) + q2[3] * q1[:3] + q1[3] * q2[:3]
+    w = q1[3]*q2[3] - (q1[:3].T @ q2[:3])
+    return vertcat(v, w)
+
+def quaternion_minus_casadi_fun():
+    """computes the tangent vector from q1 to q2 at Identity
+    returns vecotr w
+    s.t. q2 = q1 circle-cross (exp(.5 * w))
+    """
+    q1 = MX.sym('q1', 4, 1)
+    q2 = MX.sym('q2', 4, 1)
+    # first compute dq s.t.  q2 = q1 (circle cross) dq
+    q1conjugate = vertcat(-q1[0], -q1[1], -q1[2], q1[3])
+    # order of multiplication is very essential here
+    dq = quaternion_product_casadi(q1conjugate, q2)
+    # increment is log of dq
+    return Function(
+        'quaternion_minus',
+        [q1, q2],
+        [log_quaternion_casadi(dq)]
+        )
+
+# def quaternion_plus_casadi_fun():
+#     """ updates quaternion with tangent vector w """
+#     q = MX.sym('q', 4, 1)
+#     w = MX.sym('w', 3, 1)
+#     dq = exp_quaternion_casadi(0.5 * w)
+#     return Function(
+#         'quaternion_plus',
+#         [q, w],
+#         [quaternion_product_casadi(q, dq)]
+#         )
+
+    
 
 def quatToRot_casadi(q):
     R = SX.zeros(3, 3)

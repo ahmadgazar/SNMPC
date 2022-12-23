@@ -10,7 +10,7 @@ from robot_properties_solo.solo12wrapper import Solo12Config
 dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'TROT',
-      'stepLength' : 0.15,
+      'stepLength' : 0.1,
       'stepHeight' : 0.05,
       'stepKnots' : 15,
       'supportKnots' : 5,
@@ -30,7 +30,7 @@ robot_mass = pin.computeTotalMass(rmodel)
 
 gravity_constant = -9.81 
 max_leg_length = 0.34
-step_adjustment_bound = 0.1                          
+step_adjustment_bound = 0.05                          
 foot_scaling  = 1.
 lxp = 0.01  # foot length in positive x direction
 lxn = 0.01  # foot length in negative x direction
@@ -59,24 +59,15 @@ N_mpc_wbd = int(round(N_mpc/2, 2))
 N_ctrl = int((N-1)*(dt/dt_ctrl))    
 # LQR gains (for stochastic control)      
 # ----------------------------------
-Q = np.diag([1e4, 1e4, 1e4, 
-             1e3, 1e3, 1e3, 
-             1e3, 1e3, 1e3])
-
-R = np.diag([1e2,1e3,1e1,
-             1e2,1e3,1e1,
-             1e2,1e3,1e1,
-             1e2,1e3,1e1])
+Q = np.eye(27)
+R = 0.1*np.eye(30)
 
 # noise parameters:
 # -----------------
 n_w = nb_contacts*3  # no. of contact position parameters
-# contact position noise
-# discretizaton is done inside uncertainty propagation
-cov_w = np.diag([0.4**2, 0.4**2, 0.1**2,
-                 0.4**2, 0.4**2, 0.1**2,
-                 0.4**2, 0.4**2, 0.1**2,
-                 0.4**2, 0.4**2, 0.1**2])
+# uncertainty parameters 
+cov_w_dt = 0.05*dt*np.eye(27)
+
 # discrete addtive noise
 cov_white_noise = dt*np.diag(np.array([0.85**2, 0.4**2, 0.01**2,
                                        0.75**2, 0.4**2, 0.01**2,
@@ -85,32 +76,36 @@ beta_u = 0.01 # probability of constraint violation
 
 # centroidal cost objective weights:
 # ----------------------------------
-state_cost_weights = np.diag([1e1, 1e1, 1e1,       #com
-                              1e0, 1e0, 1e0,       #linear_momentum 
-                              1e1, 1e1, 1e1,       #angular_momentum 
-                              1e0, 1e0, 1e0,      #base position 
-                              # 1e1, 1e1, 1e1,1e1  #base orientation
-                              1e2, 1e2, 1e2,       #q_FL 
-                              1e2, 1e2, 1e2,       #q_FR
-                              1e2, 1e2, 1e2,       #q_HL
-                              1e2, 1e2, 1e2])      #q_HR
+state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,    #com
+                                1e1, 1e1, 1e1,    #linear_momentum 
+                                1e2, 1e2, 1e2,    #angular_momentum 
+                              
+                               1e-1, 1e-1, 1e-1,   #base position 
+                               1e2, 1e2, 1e2,      #drelative base position
+                              
+                              1e-1, 1e-1, 1e0,       #q_FL 
+                              1e-1, 1e-1, 1e0,       #q_FR
+                              1e-1, 1e-1, 1e0,       #q_HL
+                              1e-1, 1e-1, 1e0])      #q_HR
 
-control_cost_weights = np.diag([5e0, 5e0, 1e0,     #FL_forces
-                                5e0, 5e0, 1e0,     #FR_forces
-                                5e0, 5e0, 1e0,     #HL_forces
-                                5e0, 5e0, 1e0,     #HR_forces
+control_cost_weights = 2*np.diag([1e1, 1e1, 1e0,   #FL_forces
+                                1e1, 1e1, 1e0,     #FR_forces
+                                1e1, 1e1, 1e0,     #HL_forces
+                                1e1, 1e1, 1e0,     #HR_forces
+                  
                                 1e-1, 1e-1, 1e-1,  #base linear velocity
-                                1e-1, 1e-1, 1e-1,     #base angular velocity  
-                                1e2, 1e2, 1e2,     #qdot_FL
-                                1e2, 1e2, 1e2,     #qdot_FR
-                                1e2, 1e2, 1e2,     #qdot_HL
-                                1e2, 1e2, 1e2      #qdot_HR
-                              #   1e-1,1e-1, 1e-1    # aux. control inputs
+                                1e-1, 1e-1, 1e-1,  #base angular velocity  
+                                
+                                1e1, 1e1, 1e1,    #qdot_FL
+                                1e1, 1e1, 1e1,    #qdot_FR
+                                1e1, 1e1, 1e1,    #qdot_HL
+                                1e1, 1e1, 1e1     #qdot_HR
                                 ])
-swing_foot_cost_weights = np.diag([5e4, 1e4, 1e4,   #FL 
-                                   5e4, 1e4, 1e4,   #FR
-                                   5e4, 1e4, 1e4,   #HL
-                                   5e4, 1e4, 1e4])  #HR                                 
+
+swing_foot_cost_weights = 2*np.diag([1e1, 1e1, 1e1, #FL 
+                                   1e1, 1e1, 1e1,   #FR
+                                   1e1, 1e1, 1e1,   #HL
+                                   1e1, 1e1, 1e1])  #HR                                 
 # whole-body cost objective weights:
 # ---------------------------------- 
 freeFlyerQWeight = [0.]*3 + [500.]*3
