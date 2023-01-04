@@ -209,7 +209,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
         # get box plus and box minus functions
         q_plus = quaternion_plus_casadi_fun() 
         # q_minus = quaternion_minus_casadi_fun()
-        qbase_relative = q_plus(qref_base, lamda)
+        qbase_relative = q_plus(qref_base, lamda*self._dt)
         # this is now the generalized position coordinates vector 
         q_bar = vertcat(
             x[9:12],          # base position
@@ -255,7 +255,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
         lb_com = np.zeros(A_com.shape[0])
         ub_com = lb_com
         # full-kinematics linear momentum constraint 
-        qdot = u[12:30]
+        qdot = vertcat(u[12:15], lamda, u[18:])#u[12:30]
         nv = qdot.shape[0] 
         A_dh_linmom = self.hg(q=q_bar, v=qdot, a=MX.zeros(nv))['dh_lin'] - x[3:6]
         lb_dh_linmom = np.zeros(A_dh_linmom.shape[0])
@@ -379,14 +379,17 @@ class CentroidalPlusLegKinematicsCasadiModel:
         )
         # model.A_friction_pyramid = friction_pyramid_mat
         model.ee_frame_vel = A_frame_velocity
-        # dynamics jacobians
+        # dynamics jacobians w.r.t. state
         discrete_dynamics = x + f*self._dt
         model.Jx_fun = Function("A",
-                    [x, u, model.p], [jacobian(discrete_dynamics, x)],
+                    [x, u, model.p], 
+                    [jacobian(discrete_dynamics, x)],
                     ['x', 'u', 'p'], ['J_x']
                     )
+        # dynamics jacobians w.r.t. controls
         model.Ju_fun = Function("B",
-                    [x, u, model.p], [jacobian(discrete_dynamics, u)],
+                    [x, u, model.p], 
+                    [jacobian(discrete_dynamics, u)],
                     ['x', 'u', 'p'], ['J_u']
                     )
         self.casadi_model = model

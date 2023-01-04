@@ -10,7 +10,7 @@ from robot_properties_solo.solo12wrapper import Solo12Config
 dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'TROT',
-      'stepLength' : 0.1,
+      'stepLength' : 0.12,
       'stepHeight' : 0.05,
       'stepKnots' : 15,
       'supportKnots' : 5,
@@ -66,7 +66,7 @@ R = 0.1*np.eye(30)
 # -----------------
 n_w = nb_contacts*3  # no. of contact position parameters
 # uncertainty parameters 
-cov_w_dt = 0.05*dt*np.eye(27)
+cov_w_dt = (0.4**2)*dt*np.eye(27)
 
 # discrete addtive noise
 cov_white_noise = dt*np.diag(np.array([0.85**2, 0.4**2, 0.01**2,
@@ -96,10 +96,10 @@ control_cost_weights = 2*np.diag([1e1, 1e1, 1e0,   #FL_forces
                                 1e-1, 1e-1, 1e-1,  #base linear velocity
                                 1e-1, 1e-1, 1e-1,  #base angular velocity  
                                 
-                                1e1, 1e1, 1e1,    #qdot_FL
-                                1e1, 1e1, 1e1,    #qdot_FR
-                                1e1, 1e1, 1e1,    #qdot_HL
-                                1e1, 1e1, 1e1     #qdot_HR
+                                1e0, 1e0, 1e0,    #qdot_FL
+                                1e0, 1e0, 1e0,    #qdot_FR
+                                1e0, 1e0, 1e0,    #qdot_HL
+                                1e0, 1e0, 1e0     #qdot_HR
                                 ])
 
 swing_foot_cost_weights = 2*np.diag([1e1, 1e1, 1e1, #FL 

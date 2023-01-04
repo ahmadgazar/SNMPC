@@ -1,5 +1,5 @@
 from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
-# from utils import normalize_quaternion, log_map_casadi, rotToQuat_casadi
+from scipy.stats import norm
 import scipy.linalg as la
 from casadi import *
 import numpy as np
@@ -140,12 +140,12 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             ocp.constraints.lsg = np.zeros(ng)
             ocp.constraints.usg = np.zeros(ng)
             # slacks on nonlinear constraints
-            L2_pen = 1e5
-            L1_pen = 1e0 #1e0
             ocp.constraints.idxsh = np.array(range(nh))
             ocp.constraints.lsh = np.zeros(nh)
             ocp.constraints.ush = np.zeros(nh)
             # slack penalties
+            L2_pen = 1e3
+            L1_pen = 1e2 #1e0
             ocp.cost.Zl = L2_pen * np.ones(nh+ng)
             ocp.cost.Zu = L2_pen * np.ones(nh+ng)
             ocp.cost.zl = L1_pen * np.ones(nh+ng)
@@ -241,7 +241,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.frFootId = self.rmodel.getFrameId(frame_names[1])
         self.hlFootId = self.rmodel.getFrameId(frame_names[2])
         self.hrFootId = self.rmodel.getFrameId(frame_names[3])
-
 
     def __create_swing_foot_cost_ref(self):
         q0 = self.model._q0
@@ -400,7 +399,8 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                 print('RTI feedback phase took ' + str(elapsed_feedback) + " seconds")
                 solver.print_statistics()
                 if status == 0:
-                    print("HOORAY ! found a solution after :", elapsed_prep+elapsed_feedback, " seconds")
+                    print("HOORAY ! found a solution after :", 
+                    elapsed_prep+elapsed_feedback, " seconds")
                 else:
                     raise Exception(f'acados returned status {status}.')
             else:
@@ -409,7 +409,8 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                 elapsed_time= time.time() - t
                 solver.print_statistics()
                 if status == 0:
-                    print("HOORAY ! found a solution after :", elapsed_time, " seconds")
+                    print("HOORAY ! found a solution after :", 
+                    elapsed_time, " seconds")
                 else:
                     raise Exception(f'acados returned status {status}.')
             # save open-loop trajectories
@@ -425,6 +426,10 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         return X_sol, U_sol        
 
     def solve(self):
+        model = self.model
+        STOCHASTIC = model._STOCHASTIC_OCP
+        if STOCHASTIC:
+            self.eta = norm.ppf(1-self.model._beta_u)
         if self.RECEEDING_HORIZON:
             X_sim, U_sim = self.run_mpc()
         else:
@@ -452,7 +457,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             swing_feet_tasks = self.swing_feet_tasks
             com_tasks = self.com_tasks
             qref_base_k =  x_ref_N[0][12:16]
-            STOCHASTIC = model._STOCHASTIC_OCP
             # solver main loop
             for SQP_iter in range(100):
                 Sigma_k = np.zeros((nx, nx))
@@ -495,11 +499,12 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     # set parameters and cost references
                     solver.set(time_idx, 'p', params_k)
                     solver.cost_set(time_idx,'yref', y_ref_k)
-                    # propagate uncertainties
-                    A_k = A(x_warm_start_k, u_warm_start_k, params_k)
-                    B_k = B(x_warm_start_k, u_warm_start_k,params_k)  
-                    K_k = self.compute_riccatti_gains(A_k, B_k)
-                    Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k) 
+                    # propagate uncertainties ()
+                    if STOCHASTIC:
+                        A_k = A(x_warm_start_k, u_warm_start_k, params_k)
+                        B_k = B(x_warm_start_k, u_warm_start_k,params_k)  
+                        K_k = self.compute_riccatti_gains(A_k, B_k)
+                        Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k) 
                     # set warm-start 
                     solver.set(time_idx, 'x', x_warm_start_k)
                     solver.set(time_idx, 'u', u_warm_start_k)
@@ -537,14 +542,24 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                         # lateral part (x-y direction)
                         for lateral_constraint_idx in range(2):
                             idx = contact_idx*2 + lateral_constraint_idx
-                            C_lateral[idx, 9:] = contact_logic*(
-                                ee_linear_jac[lateral_constraint_idx]
-                                )
+                            constraint_row = ee_linear_jac[lateral_constraint_idx, :]
+                            C_lateral[idx, 9:] = contact_logic*(constraint_row)
                             temp = contact_position_param[lateral_constraint_idx] \
                                    + ee_Jlin_times_qj[lateral_constraint_idx] \
-                                   - contact_fk[lateral_constraint_idx, :] 
-                            lg_lateral[idx] = contact_logic*(temp - step_bound)
-                            ug_lateral[idx] = contact_logic*(temp + step_bound)
+                                   - contact_fk[lateral_constraint_idx, :]
+                            # compute back-off mangnitude (only for lateral part)
+                            if STOCHASTIC:
+                                backoff = self.eta*np.sqrt(
+                                    (constraint_row @ Sigma_next[9:, 9:]) @ constraint_row.T 
+                                    )
+                            else:
+                                backoff = 0.
+                            lg_lateral[idx] = contact_logic*(
+                                temp - step_bound + backoff
+                                )
+                            ug_lateral[idx] = contact_logic*(
+                                temp + step_bound - backoff
+                                )
                         # vertical part (z-direction)
                         C_vertical[contact_idx, 9:] = contact_logic*(ee_linear_jac[2, :])
                         temp = ee_Jlin_times_qj[2] - contact_fk[2] + contact_position_param[2] 
@@ -585,12 +600,15 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     print("residuals after ", SQP_iter, "SQP_RTI iterations:\n", residuals)
                     if np.linalg.norm(residuals[2]) < 5e-4:
                         print(
-                            "YESSSSSSSSSSSSSSSSSSSSSSSSS !! .. breaking at SQP iteration number: ",
+                            '[SUCCESS] .. ', " breaking at SQP iteration number: ",
                              SQP_iter
                             )
-                        # break
+                        break
                 x_warm_start_N = X_sim
-                u_warm_start_N = U_sim    
+                u_warm_start_N = U_sim 
+                # if STOCHASTIC:
+                #     Sigma_k = Sigma_next  
+
         return X_sim, U_sim    
  
     def compute_riccatti_gains(self, A, B):
@@ -619,7 +637,9 @@ if __name__ == "__main__":
     import conf_solo12_trot_step_adjustment as conf
     import pinocchio as pin
     import numpy as np
+    import utils
 
+    # DDP warm-start
     wbd_model = WholeBodyModel(conf)
     ddp_planner = WholeBodyDDPSolver(wbd_model, MPC=False, WARM_START=False)
     ddp_planner.solve()
@@ -629,37 +649,91 @@ if __name__ == "__main__":
     qdot_warmstart = ddp_sol['jointVel']
     x_warmstart = []
     u_warmstart = []
+    rmodel, rdata = conf.rmodel, conf.rdata
     for k in range(len(centroidal_warmstart)):
         x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k]]))
         u_warmstart.append(np.concatenate([np.zeros(12), qdot_warmstart[k]]))
-    model = CentroidalPlusLegKinematicsCasadiModel(conf)
-    solver = CentroidalPlusLegKinematicsAcadosSolver(model, x_warmstart, u_warmstart, MPC=False)
-    x, u = solver.solve()
+    # nominal traj-opt
+    model_nom = CentroidalPlusLegKinematicsCasadiModel(conf, STOCHASTIC_OCP=False)
+    solver_nom = CentroidalPlusLegKinematicsAcadosSolver(
+        model_nom, x_warmstart, u_warmstart, MPC=False)
+    x_nom, u_nom = solver_nom.solve()
+    # stochastic traj-opt
+    model_stoch = CentroidalPlusLegKinematicsCasadiModel(conf, STOCHASTIC_OCP=True)
+    solver_stoch = CentroidalPlusLegKinematicsAcadosSolver(
+        model_stoch, x_warmstart, u_warmstart, MPC=False)
+    x_stoch, u_stoch = solver_stoch.solve()
     robot = conf.solo12.robot
+    dt = conf.dt
+    dt_ctrl = 0.01
+    N_ctrl =  int(dt/dt_ctrl)
+    # initialize end-effector trajectories
+    FL_nom = np.zeros((3, x_nom.shape[0]-1)).astype(np.float32)
+    FR_nom = np.zeros((3, x_nom.shape[0]-1)).astype(np.float32)
+    HL_nom = np.zeros((3, x_nom.shape[0]-1)).astype(np.float32)
+    HR_nom = np.zeros((3, x_nom.shape[0]-1)).astype(np.float32)
+    FL_stoch = np.zeros((3, x_stoch.shape[0]-1)).astype(np.float32)
+    FR_stoch = np.zeros((3, x_stoch.shape[0]-1)).astype(np.float32)
+    HL_stoch = np.zeros((3, x_stoch.shape[0]-1)).astype(np.float32)
+    HR_stoch = np.zeros((3, x_stoch.shape[0]-1)).astype(np.float32)
+    # visualize in meshcat
     if conf.WITH_MESHCAT_DISPLAY:
         viz = pin.visualize.MeshcatVisualizer(
         robot.model, robot.collision_model, robot.visual_model)
         try:
             viz.initViewer(open=True)
         except ImportError as err:
-            print(
-                "Error while initializing the viewer. Make sure you installed Python meshcat"
-            )
             print(err)
             sys.exit(0)
         viz.loadViewerModel()
-        for k in range(u.shape[0]):
+        # visualize nominal motion
+        for k in range(conf.N-1):
             q_base_next = np.array(
-                    model.casadi_model.q_plus(x_warmstart[k][3:7], x[k, 12:15])
+                    model_nom.casadi_model.q_plus(
+                        x_warmstart[k][3:7], x_nom[k, 12:15]                        )
                     ).squeeze()
-            print(u[k, :12])        
-            for j in range(10):
-                q = np.concatenate(
-                    [x[k, 9:12], 
-                    q_base_next,
-                     x[k, 15:]]
-                    )        
+            q = np.concatenate(
+                [x_nom[k, 9:12], 
+                q_base_next,
+                    x_nom[k, 15:]]
+                )
+            pin.framesForwardKinematics(rmodel, rdata, q)
+            FL_nom[:, k] = rdata.oMf[rmodel.getFrameId('FL_FOOT')].translation
+            FR_nom[:, k] = rdata.oMf[rmodel.getFrameId('FR_FOOT')].translation
+            HL_nom[:, k] = rdata.oMf[rmodel.getFrameId('HL_FOOT')].translation
+            HR_nom[:, k] = rdata.oMf[rmodel.getFrameId('HR_FOOT')].translation            
+            for j in range(20): 
                 viz.display(q)
+        # visualize stochastic motion
+        for k in range(conf.N-1):
+            q_base_next = np.array(
+                    model_stoch.casadi_model.q_plus(
+                        x_warmstart[k][3:7], x_stoch[k, 12:15]
+                        )
+                    ).squeeze()
+            q = np.concatenate(
+                    [x_stoch[k, 9:12], 
+                    q_base_next,
+                     x_stoch[k, 15:]]
+                    )
+            pin.framesForwardKinematics(rmodel, rdata, q)
+            FL_stoch[:, k] = rdata.oMf[rmodel.getFrameId('FL_FOOT')].translation
+            FR_stoch[:, k] = rdata.oMf[rmodel.getFrameId('FR_FOOT')].translation
+            HL_stoch[:, k] = rdata.oMf[rmodel.getFrameId('HL_FOOT')].translation
+            HR_stoch[:, k] = rdata.oMf[rmodel.getFrameId('HR_FOOT')].translation            
+            for j in range(20):
+                viz.display(q)        
+    # display nominal end-effector trajectories
+    utils.addLineSegment(viz, 'FL_trajectory_nom', FL_nom, [1,0,0,1])
+    utils.addLineSegment(viz, 'FR_trajectory_nom', FR_nom, [1,0,0,1])
+    # utils.addLineSegment(viz, 'HL_trajectory_nom', HL_nom, [1,0,0,1])
+    # utils.addLineSegment(viz, 'HR_trajectory_nom', HR_nom, [1,0,0,1])
+    # display stochastic end-effector trajectories
+    utils.addLineSegment(viz, 'FL_stoch', FL_stoch, [0,1,0,1])
+    utils.addLineSegment(viz, 'FR_stoch', FR_stoch, [0,1,0,1])
+    # utils.addLineSegment(viz, 'HL_stoch', HL_stoch, [0,1,0,1])
+    # utils.addLineSegment(viz, 'HR_stoch', HR_stoch, [0,1,0,1])
+
 
 
 
