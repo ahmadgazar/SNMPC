@@ -30,7 +30,7 @@ robot_mass = pin.computeTotalMass(rmodel)
 
 gravity_constant = -9.81 
 max_leg_length = 0.34
-step_adjustment_bound = 0.05                          
+step_adjustment_bound = 0.075                          
 foot_scaling  = 1.
 lxp = 0.01  # foot length in positive x direction
 lxn = 0.01  # foot length in negative x direction
@@ -83,10 +83,10 @@ state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,    #com
                                1e-1, 1e-1, 1e-1,   #base position 
                                1e2, 1e2, 1e2,      #drelative base position
                               
-                              1e-1, 1e-1, 1e0,       #q_FL 
-                              1e-1, 1e-1, 1e0,       #q_FR
-                              1e-1, 1e-1, 1e0,       #q_HL
-                              1e-1, 1e-1, 1e0])      #q_HR
+                              5e-1, 5e-1, 5e-1,       #q_FL 
+                              5e-1, 5e-1, 5e-1,       #q_FR
+                              5e-1, 5e-1, 5e-1,       #q_HL
+                              5e-1, 5e-1, 5e-1])      #q_HR
 
 control_cost_weights = 2*np.diag([1e1, 1e1, 1e0,   #FL_forces
                                 1e1, 1e1, 1e0,     #FR_forces

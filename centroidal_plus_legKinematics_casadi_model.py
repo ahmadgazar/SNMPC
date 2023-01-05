@@ -43,7 +43,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
         # private methods
         self.__fill_contact_data(conf)
         if conf.rmodel.type == 'QUADRUPED':
-            self.__setup_casadi_model_quadruped_with_leg_kinematics()    
+            self.__setup_casadi_model_quadruped_with_leg_kinematics()        
 
     def __fill_contact_data(self, conf):
         contact_trajectory = create_contact_trajectory(conf)
@@ -209,7 +209,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
         # get box plus and box minus functions
         q_plus = quaternion_plus_casadi_fun() 
         # q_minus = quaternion_minus_casadi_fun()
-        qbase_relative = q_plus(qref_base, lamda*self._dt)
+        qbase_relative = q_plus(qref_base, lamda)
         # this is now the generalized position coordinates vector 
         q_bar = vertcat(
             x[9:12],          # base position
@@ -394,7 +394,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
                     )
         self.casadi_model = model
     
-  
+    
 if __name__ == "__main__":
     from casadi_kin_dyn import pycasadi_kin_dyn as cas_kin_dyn
     import conf_solo12_trot_step_adjustment as conf

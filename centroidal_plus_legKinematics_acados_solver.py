@@ -85,29 +85,35 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.ocp.solver_options.__initialize_t_slacks = 0
     
     def __fill_ocp_cost(self):
-        ny, nx = self.ny, self.nx
+        ny, nx, nu = self.ny, self.nx, self.nu
         x, u = self.casadi_model.x, self.casadi_model.u
         cost = self.ocp.cost
         # coefficient matrices
+        Vx = np.zeros((nx+nu, nx))
+        Vx[:nx, :] = np.eye(nx)
+        Vu = np.zeros((nx+nu, nu))
+        Vu[nx:, :] = np.eye(nu)
         Vx_e = np.eye(nx)
         # cost function weights
         Q = self.state_cost_weights
         cost.W = la.block_diag(
-            Q, self.control_cost_weights, self.swing_cost_weights
+            Q, self.control_cost_weights
             )
         cost.W_e = Q       
         # cost type
-        cost.cost_type = 'NONLINEAR_LS'
+        cost.cost_type = 'LINEAR_LS'
         cost.cost_type_e = 'LINEAR_LS'
         # cost expressions
         ee_fk_pos = self.model.casadi_model.fk_q_bar_pos
         ee_frame_vel = self.model.casadi_model.ee_frame_vel
-        self.ocp.model.cost_y_expr = vertcat(x, u, ee_frame_vel)
+        self.ocp.model.cost_y_expr = vertcat(x, u)
         self.ocp.model.cost_y_expr_e = x
         # initial state tracking reference
-        cost.yref = np.zeros(ny)
+        cost.yref = np.zeros(nx+nu)
         cost.yref_e = np.zeros(nx)
         cost.Vx_e = Vx_e
+        cost.Vx = Vx
+        cost.Vu = Vu
 
     def __fill_ocp_constraints(self):
         ocp = self.ocp
@@ -145,7 +151,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             ocp.constraints.ush = np.zeros(nh)
             # slack penalties
             L2_pen = 1e3
-            L1_pen = 1e2 #1e0
+            L1_pen = 1e-1 #1e0
             ocp.cost.Zl = L2_pen * np.ones(nh+ng)
             ocp.cost.Zu = L2_pen * np.ones(nh+ng)
             ocp.cost.zl = L1_pen * np.ones(nh+ng)
@@ -456,7 +462,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             step_bound = self.step_bound
             swing_feet_tasks = self.swing_feet_tasks
             com_tasks = self.com_tasks
-            qref_base_k =  x_ref_N[0][12:16]
             # solver main loop
             for SQP_iter in range(100):
                 Sigma_k = np.zeros((nx, nx))
@@ -482,8 +487,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     u_warm_start_k = u_warm_start_N[time_idx]
                     y_ref_k = np.concatenate(
                         [x_ref_k,
-                        u_warm_start_k, 
-                        np.zeros(12)]
+                        u_warm_start_k]
                         )
                     # get contact parameters and base orientation references
                     contacts_logic_k = contacts_logic_N[time_idx]
@@ -562,13 +566,13 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                                 )
                         # vertical part (z-direction)
                         C_vertical[contact_idx, 9:] = contact_logic*(ee_linear_jac[2, :])
-                        temp = ee_Jlin_times_qj[2] - contact_fk[2] + contact_position_param[2] 
+                        temp = ee_Jlin_times_qj[2] - contact_fk[2] 
                         lg_vertical[contact_idx] = contact_logic*temp 
                         ug_vertical[contact_idx] = contact_logic*temp
                     # add contatenated constraints 
                     C_total = np.concatenate([C_lateral, C_vertical], axis=0)
-                    ub_total = np.concatenate([lg_lateral, lg_vertical], axis=0)
-                    lb_total = np.concatenate([ug_lateral, ug_vertical], axis=0)                   
+                    lb_total = np.concatenate([lg_lateral, lg_vertical], axis=0)
+                    ub_total = np.concatenate([ug_lateral, ug_vertical], axis=0)                   
                     solver.constraints_set(time_idx, 'C', C_total, api='new')
                     solver.constraints_set(time_idx, 'lg', lb_total)
                     solver.constraints_set(time_idx, 'ug', ub_total)
@@ -597,8 +601,10 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                         "difference between two SQP iterations = ",
                          np.linalg.norm(X_sim - x_warm_start_N)
                          )
-                    print("residuals after ", SQP_iter, "SQP_RTI iterations:\n", residuals)
-                    if np.linalg.norm(residuals[2]) < 5e-4:
+                    print(
+                        "residuals after: ", SQP_iter, "SQP_RTI iterations:\n", residuals
+                        )
+                    if np.linalg.norm(residuals[2]) < 1e-3:
                         print(
                             '[SUCCESS] .. ', " breaking at SQP iteration number: ",
                              SQP_iter
@@ -606,9 +612,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                         break
                 x_warm_start_N = X_sim
                 u_warm_start_N = U_sim 
-                # if STOCHASTIC:
-                #     Sigma_k = Sigma_next  
-
         return X_sim, U_sim    
  
     def compute_riccatti_gains(self, A, B):
@@ -686,53 +689,73 @@ if __name__ == "__main__":
             print(err)
             sys.exit(0)
         viz.loadViewerModel()
-        # visualize nominal motion
-        for k in range(conf.N-1):
-            q_base_next = np.array(
-                    model_nom.casadi_model.q_plus(
-                        x_warmstart[k][3:7], x_nom[k, 12:15]                        )
-                    ).squeeze()
-            q = np.concatenate(
-                [x_nom[k, 9:12], 
-                q_base_next,
-                    x_nom[k, 15:]]
-                )
-            pin.framesForwardKinematics(rmodel, rdata, q)
-            FL_nom[:, k] = rdata.oMf[rmodel.getFrameId('FL_FOOT')].translation
-            FR_nom[:, k] = rdata.oMf[rmodel.getFrameId('FR_FOOT')].translation
-            HL_nom[:, k] = rdata.oMf[rmodel.getFrameId('HL_FOOT')].translation
-            HR_nom[:, k] = rdata.oMf[rmodel.getFrameId('HR_FOOT')].translation            
-            for j in range(20): 
-                viz.display(q)
-        # visualize stochastic motion
-        for k in range(conf.N-1):
-            q_base_next = np.array(
-                    model_stoch.casadi_model.q_plus(
-                        x_warmstart[k][3:7], x_stoch[k, 12:15]
+    # add nominal contact surfaces
+    s = conf.step_adjustment_bound
+    for i, contacts in enumerate(conf.contact_sequence):
+        for contact_idx, contact in enumerate(contacts):
+            if contact.ACTIVE:
+                t = contact.pose.translation
+                if contact.CONTACT == 'FR' or contact.CONTACT == 'FL':
+                    utils.addViewerBox(
+                        viz, 'world/contact'+str(i)+str(contact_idx), s, s, 0., [1., .2, .2, .5]
                         )
-                    ).squeeze()
-            q = np.concatenate(
-                    [x_stoch[k, 9:12], 
-                    q_base_next,
-                     x_stoch[k, 15:]]
+                if contact.CONTACT == 'HR' or contact.CONTACT == 'HL':
+                    utils.addViewerBox(
+                        viz, 'world/contact'+str(i)+str(contact_idx), s, s, 0., [.2, .2, 1., .5]
+                        )       
+                utils.applyViewerConfiguration(
+                    viz, 'world/contact'+str(i)+str(contact_idx), [t[0], t[1], 0., 1, 0, 0, 0]
                     )
-            pin.framesForwardKinematics(rmodel, rdata, q)
-            FL_stoch[:, k] = rdata.oMf[rmodel.getFrameId('FL_FOOT')].translation
-            FR_stoch[:, k] = rdata.oMf[rmodel.getFrameId('FR_FOOT')].translation
-            HL_stoch[:, k] = rdata.oMf[rmodel.getFrameId('HL_FOOT')].translation
-            HR_stoch[:, k] = rdata.oMf[rmodel.getFrameId('HR_FOOT')].translation            
-            for j in range(20):
-                viz.display(q)        
+            
+    # visualize nominal motion
+    for k in range(conf.N-1):
+        q_base_next = np.array(
+                model_nom.casadi_model.q_plus(
+                    x_warmstart[k][3:7], x_nom[k, 12:15]
+                    )
+                ).squeeze()
+        q = np.concatenate(
+            [x_nom[k, 9:12], 
+            q_base_next,
+                x_nom[k, 15:]]
+            )
+        pin.framesForwardKinematics(rmodel, rdata, q)
+        FL_nom[:, k] = rdata.oMf[rmodel.getFrameId('FL_FOOT')].translation
+        FR_nom[:, k] = rdata.oMf[rmodel.getFrameId('FR_FOOT')].translation
+        HL_nom[:, k] = rdata.oMf[rmodel.getFrameId('HL_FOOT')].translation
+        HR_nom[:, k] = rdata.oMf[rmodel.getFrameId('HR_FOOT')].translation            
+        for j in range(15): 
+            viz.display(q)
+    
+    # visualize stochastic motion
+    for k in range(conf.N-1):
+        q_base_next = np.array(
+                model_stoch.casadi_model.q_plus(
+                    x_warmstart[k][3:7], x_stoch[k, 12:15]
+                    )
+                ).squeeze()
+        q = np.concatenate(
+                [x_stoch[k, 9:12], 
+                q_base_next,
+                    x_stoch[k, 15:]]
+                )
+        pin.framesForwardKinematics(rmodel, rdata, q)
+        FL_stoch[:, k] = rdata.oMf[rmodel.getFrameId('FL_FOOT')].translation
+        FR_stoch[:, k] = rdata.oMf[rmodel.getFrameId('FR_FOOT')].translation
+        HL_stoch[:, k] = rdata.oMf[rmodel.getFrameId('HL_FOOT')].translation
+        HR_stoch[:, k] = rdata.oMf[rmodel.getFrameId('HR_FOOT')].translation            
+        for j in range(15):
+            viz.display(q)
     # display nominal end-effector trajectories
     utils.addLineSegment(viz, 'FL_trajectory_nom', FL_nom, [1,0,0,1])
     utils.addLineSegment(viz, 'FR_trajectory_nom', FR_nom, [1,0,0,1])
-    # utils.addLineSegment(viz, 'HL_trajectory_nom', HL_nom, [1,0,0,1])
-    # utils.addLineSegment(viz, 'HR_trajectory_nom', HR_nom, [1,0,0,1])
+    utils.addLineSegment(viz, 'HL_trajectory_nom', HL_nom, [1,1,0,1])
+    utils.addLineSegment(viz, 'HR_trajectory_nom', HR_nom, [1,1,0,1])
     # display stochastic end-effector trajectories
     utils.addLineSegment(viz, 'FL_stoch', FL_stoch, [0,1,0,1])
     utils.addLineSegment(viz, 'FR_stoch', FR_stoch, [0,1,0,1])
-    # utils.addLineSegment(viz, 'HL_stoch', HL_stoch, [0,1,0,1])
-    # utils.addLineSegment(viz, 'HR_stoch', HR_stoch, [0,1,0,1])
+    utils.addLineSegment(viz, 'HL_stoch', HL_stoch, [0,1,1,1])
+    utils.addLineSegment(viz, 'HR_stoch', HR_stoch, [0,1,1,1])
 
 
 
