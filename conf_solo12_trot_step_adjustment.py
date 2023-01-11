@@ -83,29 +83,29 @@ state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,    #com
                                1e-1, 1e-1, 1e-1,   #base position 
                                1e2, 1e2, 1e2,      #drelative base position
                               
-                              5e-1, 5e-1, 5e-1,       #q_FL 
-                              5e-1, 5e-1, 5e-1,       #q_FR
-                              5e-1, 5e-1, 5e-1,       #q_HL
-                              5e-1, 5e-1, 5e-1])      #q_HR
+                              2e-1, 2e-1, 2e-1,       #q_FL 
+                              2e-1, 2e-1, 2e-1,       #q_FR
+                              2e-1, 2e-1, 2e-1,       #q_HL
+                              2e-1, 2e-1, 2e-1])      #q_HR
 
-control_cost_weights = 2*np.diag([1e1, 1e1, 1e0,   #FL_forces
-                                1e1, 1e1, 1e0,     #FR_forces
-                                1e1, 1e1, 1e0,     #HL_forces
-                                1e1, 1e1, 1e0,     #HR_forces
+control_cost_weights = 2*np.diag([1e1, 1e1, 1e1,   #FL_forces
+                                1e1, 1e1, 1e1,     #FR_forces
+                                1e1, 1e1, 1e1,     #HL_forces
+                                1e1, 1e1, 1e1,     #HR_forces
                   
                                 1e-1, 1e-1, 1e-1,  #base linear velocity
                                 1e-1, 1e-1, 1e-1,  #base angular velocity  
                                 
-                                1e0, 1e0, 1e0,    #qdot_FL
-                                1e0, 1e0, 1e0,    #qdot_FR
-                                1e0, 1e0, 1e0,    #qdot_HL
-                                1e0, 1e0, 1e0     #qdot_HR
+                                2e0, 2e0, 2e0,    #qdot_FL
+                                2e0, 2e0, 2e0,    #qdot_FR
+                                2e0, 2e0, 2e0,    #qdot_HL
+                                2e0, 2e0, 2e0     #qdot_HR
                                 ])
 
-swing_foot_cost_weights = 2*np.diag([1e1, 1e1, 1e1, #FL 
-                                   1e1, 1e1, 1e1,   #FR
-                                   1e1, 1e1, 1e1,   #HL
-                                   1e1, 1e1, 1e1])  #HR                                 
+swing_foot_cost_weights = 2*np.diag([1e2, 1e2, 1e2, #FL 
+                                   1e2, 1e2, 1e2,   #FR
+                                   1e2, 1e2, 1e2,   #HL
+                                   1e2, 1e2, 1e2])  #HR                                 
 # whole-body cost objective weights:
 # ---------------------------------- 
 freeFlyerQWeight = [0.]*3 + [500.]*3
