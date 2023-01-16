@@ -14,7 +14,7 @@ gait ={'type': 'TROT',
       'stepHeight' : 0.05,
       'stepKnots' : 15,
       'supportKnots' : 5,
-      'nbSteps': 5}
+      'nbSteps': 3}
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
@@ -66,7 +66,7 @@ R = 0.1*np.eye(30)
 # -----------------
 n_w = nb_contacts*3  # no. of contact position parameters
 # uncertainty parameters 
-cov_w_dt = (0.4**2)*dt*np.eye(27)
+cov_w_dt = (0.3**2)*dt*np.eye(27)
 
 # discrete addtive noise
 cov_white_noise = dt*np.diag(np.array([0.85**2, 0.4**2, 0.01**2,
@@ -83,10 +83,10 @@ state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,    #com
                                1e-1, 1e-1, 1e-1,   #base position 
                                1e2, 1e2, 1e2,      #drelative base position
                               
-                              2e-1, 2e-1, 2e-1,       #q_FL 
-                              2e-1, 2e-1, 2e-1,       #q_FR
-                              2e-1, 2e-1, 2e-1,       #q_HL
-                              2e-1, 2e-1, 2e-1])      #q_HR
+                              5e1, 5e1, 5e1,       #q_FL 
+                              5e1, 5e1, 5e1,       #q_FR
+                              5e1, 5e1, 5e1,       #q_HL
+                              5e1, 5e1, 5e1])      #q_HR
 
 control_cost_weights = 2*np.diag([1e1, 1e1, 1e1,   #FL_forces
                                 1e1, 1e1, 1e1,     #FR_forces
@@ -96,10 +96,10 @@ control_cost_weights = 2*np.diag([1e1, 1e1, 1e1,   #FL_forces
                                 1e-1, 1e-1, 1e-1,  #base linear velocity
                                 1e-1, 1e-1, 1e-1,  #base angular velocity  
                                 
-                                2e0, 2e0, 2e0,    #qdot_FL
-                                2e0, 2e0, 2e0,    #qdot_FR
-                                2e0, 2e0, 2e0,    #qdot_HL
-                                2e0, 2e0, 2e0     #qdot_HR
+                                1e1, 1e1, 1e1,    #qdot_FL
+                                1e1, 1e1, 1e1,    #qdot_FR
+                                1e1, 1e1, 1e1,    #qdot_HL
+                                1e1, 1e1, 1e1     #qdot_HR
                                 ])
 
 swing_foot_cost_weights = 2*np.diag([1e2, 1e2, 1e2, #FL 
