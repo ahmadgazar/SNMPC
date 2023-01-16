@@ -233,7 +233,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
         # get box plus and box minus functions
         q_plus = quaternion_plus_casadi_fun() 
         # q_minus = quaternion_minus_casadi_fun()
-        qbase_relative = q_plus(qref_base, lamda)
+        qbase_relative = q_plus(qref_base, lamda*self._dt)
         # this is now the generalized position coordinates vector 
         q_bar = vertcat(
             x[9:12],          # base position
@@ -279,7 +279,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
         lb_com = np.zeros(A_com.shape[0])
         ub_com = lb_com
         # full-kinematics linear momentum constraint 
-        qdot = vertcat(u[12:15], lamda, u[18:])#u[12:30]
+        qdot = vertcat(u[12:15], lamda*self._dt, u[18:])#u[12:30]
         nv = qdot.shape[0] 
         A_dh_linmom = self.hg(q=q_bar, v=qdot, a=MX.zeros(nv))['dh_lin'] - x[3:6]
         lb_dh_linmom = np.zeros(A_dh_linmom.shape[0])
@@ -366,7 +366,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
         model.contacts_params = contacts_params
         # concatenate constraints 
         constraints.expr = vertcat(
-            A_friction_pyramid, 
+            # A_friction_pyramid, 
             A_frame_velocity,
             # A_contact_location_lateral,
             # A_contact_location_vertical,
@@ -375,7 +375,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
             A_com
             )
         constraints.lb = np.hstack([
-            lb_friction_pyramid,
+            # lb_friction_pyramid,
             lb_frame_velocity,
             # lb_contact_location_lateral,
             # lb_contact_location_vertical,
@@ -384,7 +384,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
             lb_com
         ])
         constraints.ub = np.hstack([
-            ub_friction_pyramid,
+            # ub_friction_pyramid,
             ub_frame_velocity,
             # ub_contact_location_lateral,
             # ub_contact_location_vertical,

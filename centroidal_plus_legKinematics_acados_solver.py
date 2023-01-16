@@ -153,8 +153,8 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         ocp.constraints.lsh = np.zeros(nh)
         ocp.constraints.ush = np.zeros(nh)
         # slack penalties
-        L2_pen = 1e3
-        L1_pen = 1e-1 #1e0
+        L2_pen = 0e0#0e0
+        L1_pen = 2e3#1e2 
         ocp.cost.Zl = L2_pen * np.ones(nh+ng)
         ocp.cost.Zu = L2_pen * np.ones(nh+ng)
         ocp.cost.zl = L1_pen * np.ones(nh+ng)
@@ -181,13 +181,13 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         ## ---------------------
         # self.ocp.solver_options.nlp_solver_type = "SQP"
         self.ocp.solver_options.nlp_solver_type = "SQP_RTI"
-        self.ocp.solver_options.nlp_solver_tol_stat = 1e-3
+        self.ocp.solver_options.nlp_solver_tol_stat = 5e-3
         self.ocp.solver_options.nlp_solver_tol_eq = 1e-4
         self.ocp.solver_options.nlp_solver_tol_ineq = 1e-4
         self.ocp.solver_options.nlp_solver_tol_comp = 1e-1
-        # self.ocp.solver_options.nlp_solver_max_iter=0
+        # self.ocp.solver_options.nlp_solver_max_iter = 2
         # self.ocp.solver_options.nlp_solver_step_length=1e-20
-        # self.ocp.solver_options.globalization = ['FIXED_STEP', 'MERIT_BACKTRACKING']
+        # self.ocp.solver_options.globalization = 'MERIT_BACKTRACKING'
         # self.ocp.solver_options.alpha_min = 0.01
         # --------------------
         # - QP solver settings
@@ -411,11 +411,11 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                 if traj_time_idx == 0:
                     x_warm_start_k = x_ref_k
                     u_warm_start_k = u_ref_k
+                    solver.set(mpc_time_idx, 'x', x_warm_start_k)
+                    solver.set(mpc_time_idx, 'u', u_warm_start_k)
                 else:
                     x_warm_start_k = x_warm_start_N[mpc_time_idx]
-                    u_warm_start_k = u_warm_start_N[mpc_time_idx]
-                solver.set(mpc_time_idx, 'x', x_warm_start_k)
-                solver.set(mpc_time_idx, 'u', u_warm_start_k)
+                    u_warm_start_k = u_warm_start_N[mpc_time_idx]    
                 # propagate uncertainties 
                 if STOCHASTIC:
                     A_k = A(x_warm_start_k, u_warm_start_k, params_k)
@@ -429,7 +429,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                 qj_k = np.concatenate(
                     [base_posj_k, 
                     np.array(
-                        model.casadi_model.q_plus(qref_base_k, lambdaj_k)
+                        model.casadi_model.q_plus(qref_base_k, lambdaj_k*self.dt)
                         ).squeeze(),
                     joint_posj_k]
                 )
@@ -486,18 +486,18 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                 solver.constraints_set(mpc_time_idx, 'C', C_total, api='new')
                 solver.constraints_set(mpc_time_idx, 'lg', lb_total)
                 solver.constraints_set(mpc_time_idx, 'ug', ub_total)
-            # # terminal constraints
+            # terminal constraints
             # x_ref_terminal = x_ref_mpc[traj_time_idx+N_mpc]
             # self.ocp.constraints.idxbx_e = np.array(range(self.nx))
-            # self.ocp.constraints.lbx_e = x_ref_terminal 
-            # self.ocp.constraints.ubx_e = x_ref_terminal     
+            # self.ocp.constraints.lbx_e = x_ref_k 
+            # self.ocp.constraints.ubx_e = x_ref_k     
             # update terminal tracking cost
             solver.cost_set(N_mpc,'yref', x_ref_k)
             # warm-start the terminal node 
             if traj_time_idx == 0:
                 solver.set(N_mpc, 'x', x_ref_k)
-            else:
-                solver.set(N_mpc, 'x', x_warm_start_k)    
+            # else:
+            #     solver.set(N_mpc, 'x', x_warm_start_k)    
             # solve OCP
             if self.ocp.solver_options.nlp_solver_type == 'SQP_RTI':
                 # QP preparation rti_phase:
@@ -577,7 +577,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             # swing_feet_tasks = self.swing_feet_tasks
             # com_tasks = self.com_tasks
             # solver main loop
-            for SQP_iter in range(50):
+            for SQP_iter in range(100):
                 Sigma_k = np.zeros((nx, nx))
                 for time_idx in range(N):
                     # get stage and terminal references
@@ -595,9 +595,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     if SQP_iter == 0:
                         x_warm_start_k = x_ref_k
                         x_warm_start_goal = x_ref_goal
-                        # set warm-start 
-                        # solver.set(time_idx, 'x', x_warm_start_k)
-                        # solver.set(time_idx, 'u', u_warm_start_k)
                     else:    
                         x_warm_start_k = x_warm_start_N[time_idx]
                         x_warm_start_goal = x_warm_start_N[-1]
@@ -606,6 +603,9 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                         [x_ref_k,
                         u_warm_start_k]
                         )
+                    # set warm-start 
+                    solver.set(time_idx, 'x', x_warm_start_k)
+                    solver.set(time_idx, 'u', u_warm_start_k)    
                     # get contact parameters and base orientation references
                     contacts_logic_k = contacts_logic_N[time_idx]
                     contacts_position_k = contacts_position_N[time_idx]
@@ -634,7 +634,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     qj_k = np.concatenate(
                         [base_posj_k, 
                         np.array(
-                            model.casadi_model.q_plus(qref_base_k, lambdaj_k)
+                            model.casadi_model.q_plus(qref_base_k, lambdaj_k*self.dt)
                             ).squeeze(),
                         joint_posj_k]
                     )
@@ -694,7 +694,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                 # set terminal references
                 solver.cost_set(N,'yref', x_ref_goal)
                 # if SQP_iter == 0:
-                #    solver.set(N, 'x', x_warm_start_goal)
+                solver.set(N, 'x', x_warm_start_goal)
                 # terminal constraints
                 # self.ocp.constraints.idxbx_e = np.array(range(self.nx))
                 # self.ocp.constraints.lbx_e = x_ref_terminal 
@@ -720,7 +720,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     print(
                         "residuals after: ", SQP_iter, "SQP_RTI iterations:\n", residuals
                         )
-                    if np.linalg.norm(residuals[2]) < 1e-4:
+                    if np.linalg.norm(residuals[2]) < 5e-3:
                         print(
                             '[SUCCESS] .. ', " breaking at SQP iteration number: ",
                              SQP_iter
@@ -753,7 +753,7 @@ if __name__ == "__main__":
     from centroidal_plus_legKinematics_casadi_model import CentroidalPlusLegKinematicsCasadiModel
     from wholebody_croccodyl_solver import WholeBodyDDPSolver
     from wholebody_croccodyl_model import WholeBodyModel
-    import conf_solo12_trot_step_adjustment as conf
+    import conf_solo12_bound_step_adjustment as conf
     # import conf_bolt_humanoid_step_adjustment as conf
 
     import pinocchio as pin
