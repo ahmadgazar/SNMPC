@@ -9,12 +9,23 @@ from robot_properties_solo.solo12wrapper import Solo12Config
 # -------------------
 dt = 0.01
 dt_ctrl = 0.001
+# TRAJ-OPT:
+# ---------
+# gait = {'type': 'BOUND',
+#       'stepLength' : 0.15,
+#       'stepHeight' : 0.1,
+#       'stepKnots' : 15,
+#       'supportKnots' : 5,
+#       'nbSteps': 3}
+
+# MPC:
+# ----
 gait = {'type': 'BOUND',
       'stepLength' : 0.15,
       'stepHeight' : 0.1,
-      'stepKnots' : 17,
+      'stepKnots' : 15,
       'supportKnots' : 10,
-      'nbSteps': 3}     
+      'nbSteps': 3}      
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
@@ -74,11 +85,44 @@ cov_white_noise = dt*np.diag(np.array([0.85**2, 0.4**2, 0.01**2,
                                        0.85**2, 0.4**2, 0.01**2]))
 beta_u = 0.01 # probability of constraint violation 
 
-# centroidal cost objective weights:
-# ----------------------------------
-state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,    #com
-                                1e1, 1e1, 1e1,    #linear_momentum 
-                                1e3, 1e3, 1e3,    #angular_momentum 
+# centroidal cost objective weights TRAJ-OPT:
+# -------------------------------------------
+# state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,    #com
+#                                 1e1, 1e1, 1e1,    #linear_momentum 
+#                                 1e3, 1e3, 1e3,    #angular_momentum 
+                              
+#                                1e-1, 1e-1, 1e-1,   #base position 
+#                                1e2, 1e2, 1e2,      #drelative base position
+                              
+#                               2e2, 2e2, 2e2,       #q_FL 
+#                               2e2, 2e2, 2e2,       #q_FR
+#                               2e2, 2e2, 2e2,       #q_HL
+#                               2e2, 2e2, 2e2])      #q_HR
+
+# control_cost_weights = 2*np.diag([1e1, 1e1, 1e1,   #FL_forces
+#                                 1e1, 1e1, 1e1,     #FR_forces
+#                                 1e1, 1e1, 1e1,     #HL_forces
+#                                 1e1, 1e1, 1e1,     #HR_forces
+                  
+#                                 1e-1, 1e-1, 1e-1,  #base linear velocity
+#                                 1e-1, 1e-1, 1e-1,  #base angular velocity  
+                                
+#                                 1e1, 1e1, 1e1,    #qdot_FL
+#                                 1e1, 1e1, 1e1,    #qdot_FR
+#                                 1e1, 1e1, 1e1,    #qdot_HL
+#                                 1e1, 1e1, 1e1     #qdot_HR
+#                                 ])
+
+# acados slack penalties TRAJ-OPT:
+# -------------------------------
+# L2_pen = 1e1
+# L1_pen = 1e3 
+
+# centroidal cost objective weights MPC:
+# -------------------------------------
+state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,     #com
+                                1e1, 1e1, 1e1,     #linear_momentum 
+                                1e3, 1e3, 1e3,     #angular_momentum 
                               
                                1e-1, 1e-1, 1e-1,   #base position 
                                1e2, 1e2, 1e2,      #drelative base position
@@ -96,16 +140,23 @@ control_cost_weights = 2*np.diag([1e1, 1e1, 1e1,   #FL_forces
                                 1e-1, 1e-1, 1e-1,  #base linear velocity
                                 1e-1, 1e-1, 1e-1,  #base angular velocity  
                                 
-                                3e2, 3e2, 3e2,    #qdot_FL
-                                3e2, 3e2, 3e2,    #qdot_FR
-                                3e2, 3e2, 3e2,    #qdot_HL
-                                3e2, 3e2, 3e2     #qdot_HR
+                                1e1, 1e1, 1e1,     #qdot_FL
+                                1e1, 1e1, 1e1,     #qdot_FR
+                                1e1, 1e1, 1e1,     #qdot_HL
+                                1e1, 1e1, 1e1      #qdot_HR
                                 ])
 
 swing_foot_cost_weights = 2*np.diag([1e2, 1e2, 1e2, #FL 
                                    1e2, 1e2, 1e2,   #FR
                                    1e2, 1e2, 1e2,   #HL
-                                   1e2, 1e2, 1e2])  #HR                                 
+                                   1e2, 1e2, 1e2])  #HR
+
+
+# acados slack penalties MPC:
+# ---------------------------
+L2_pen = 1e0 #without friction 1e1
+L1_pen = 5e1 #without friction 1e2 
+
 # whole-body cost objective weights:
 # ---------------------------------- 
 freeFlyerQWeight = [0.]*3 + [500.]*3

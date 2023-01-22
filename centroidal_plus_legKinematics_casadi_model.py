@@ -31,6 +31,8 @@ class CentroidalPlusLegKinematicsCasadiModel:
         self._step_bound = conf.step_adjustment_bound
         self._Q = conf.Q
         self._R = conf.R 
+        self._L2_pen = conf.L2_pen
+        self._L1_pen = conf.L1_pen
         if conf.rmodel.foot_type == 'FLAT_FOOT':
             self._robot_foot_range = {'x':np.array([conf.lxp, conf.lxn]),
                                       'y':np.array([conf.lyp, conf.lyn])}
@@ -258,10 +260,14 @@ class CentroidalPlusLegKinematicsCasadiModel:
                   CONTACT_ACTIVATION_FL*contact_force_FL +\
                   CONTACT_ACTIVATION_HR*contact_force_HR +\
                   CONTACT_ACTIVATION_HL*contact_force_HL
-        ang_mom = CONTACT_ACTIVATION_FR*cross((contact_position_FR-com),contact_force_FR)+\
-                  CONTACT_ACTIVATION_FL*cross((contact_position_FL-com),contact_force_FL)+\
-                  CONTACT_ACTIVATION_HR*cross((contact_position_HR-com),contact_force_HR)+\
-                  CONTACT_ACTIVATION_HL*cross((contact_position_HL-com),contact_force_HL)       
+        ang_mom = CONTACT_ACTIVATION_FR*cross(
+                    (contact_position_FR-com),contact_force_FR)+\
+                  CONTACT_ACTIVATION_FL*cross(
+                    (contact_position_FL-com),contact_force_FL)+\
+                  CONTACT_ACTIVATION_HR*cross(
+                    (contact_position_HR-com),contact_force_HR)+\
+                  CONTACT_ACTIVATION_HL*cross(
+                    (contact_position_HL-com),contact_force_HL)       
         mg_vector = np.array([0., 0., m*g])
         # qref [+] lambda_next =  (qref_curr [+] lambda_curr) [+] omega
         # which is equivalent to 
@@ -366,7 +372,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
         model.contacts_params = contacts_params
         # concatenate constraints 
         constraints.expr = vertcat(
-            # A_friction_pyramid, 
+            A_friction_pyramid, 
             A_frame_velocity,
             # A_contact_location_lateral,
             # A_contact_location_vertical,
@@ -375,7 +381,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
             A_com
             )
         constraints.lb = np.hstack([
-            # lb_friction_pyramid,
+            lb_friction_pyramid,
             lb_frame_velocity,
             # lb_contact_location_lateral,
             # lb_contact_location_vertical,
@@ -384,7 +390,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
             lb_com
         ])
         constraints.ub = np.hstack([
-            # ub_friction_pyramid,
+            ub_friction_pyramid,
             ub_frame_velocity,
             # ub_contact_location_lateral,
             # ub_contact_location_vertical,

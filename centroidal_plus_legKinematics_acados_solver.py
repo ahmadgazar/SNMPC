@@ -25,7 +25,10 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # QR weights for stochastic ocp 
         self.Q = model._Q
         self.R = model._R
-        self.W = model._Cov_w 
+        self.W = model._Cov_w
+        # constraint slack penalties
+        self.L2_pen = model._L2_pen
+        self.L1_pen = model._L1_pen
         # casadi model
         self.model = model
         self.casadi_model = model.casadi_model
@@ -153,12 +156,12 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         ocp.constraints.lsh = np.zeros(nh)
         ocp.constraints.ush = np.zeros(nh)
         # slack penalties
-        L2_pen = 0e0#0e0
-        L1_pen = 2e3#1e2 
-        ocp.cost.Zl = L2_pen * np.ones(nh+ng)
-        ocp.cost.Zu = L2_pen * np.ones(nh+ng)
-        ocp.cost.zl = L1_pen * np.ones(nh+ng)
-        ocp.cost.zu = L1_pen * np.ones(nh+ng)
+        L2_pen = self.L2_pen
+        L1_pen = self.L1_pen 
+        ocp.cost.Zl = L2_pen #* np.ones(nh+ng)
+        ocp.cost.Zu = L2_pen #* np.ones(nh+ng)
+        ocp.cost.zl = L1_pen #* np.ones(nh+ng)
+        ocp.cost.zu = L1_pen #* np.ones(nh+ng)
 
     def __fill_ocp_solver_settings(self):
         if self.RECEEDING_HORIZON:
@@ -174,7 +177,8 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.ocp.solver_options.sim_method_num_steps = 1
         # self.ocp.solver_options.sim_method_newton_iter = 1
         self.ocp.solver_options.print_level = 0
-        # self.ocp.solver_options.qp_solver_cond_N = N
+        self.ocp.solver_options.qp_solver_cond_N = N
+        self.ocp.solver_options.qp_solver_iter_max = 15
         # ocp.solver_options.sim_method_newton_iter = 10
         ## ---------------------
         ##  NLP solver settings
@@ -411,11 +415,11 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                 if traj_time_idx == 0:
                     x_warm_start_k = x_ref_k
                     u_warm_start_k = u_ref_k
-                    solver.set(mpc_time_idx, 'x', x_warm_start_k)
-                    solver.set(mpc_time_idx, 'u', u_warm_start_k)
                 else:
                     x_warm_start_k = x_warm_start_N[mpc_time_idx]
                     u_warm_start_k = u_warm_start_N[mpc_time_idx]    
+                solver.set(mpc_time_idx, 'x', x_warm_start_k)
+                solver.set(mpc_time_idx, 'u', u_warm_start_k)
                 # propagate uncertainties 
                 if STOCHASTIC:
                     A_k = A(x_warm_start_k, u_warm_start_k, params_k)
@@ -496,8 +500,8 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             # warm-start the terminal node 
             if traj_time_idx == 0:
                 solver.set(N_mpc, 'x', x_ref_k)
-            # else:
-            #     solver.set(N_mpc, 'x', x_warm_start_k)    
+            else:
+                solver.set(N_mpc, 'x', x_warm_start_k)    
             # solve OCP
             if self.ocp.solver_options.nlp_solver_type == 'SQP_RTI':
                 # QP preparation rti_phase:
@@ -539,8 +543,8 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             X_sol[traj_time_idx+1] = x_sol[0]
             U_sol[traj_time_idx] = u_sol[0]
             # warm-start solver from the previous solution 
-            x_warm_start_N = np.concatenate([x_sol[1:], x_sol[-1].reshape(1, nx)])
-            u_warm_start_N = np.concatenate([u_sol[1:], u_sol[-1].reshape(1, nu)])
+            x_warm_start_N = np.concatenate([x_sol[1:], x_sol[-1].reshape(1, nx)]) #x_sol
+            u_warm_start_N = np.concatenate([u_sol[1:], u_sol[-1].reshape(1, nu)]) #u_sol
             # update initial condition
             x0 = x_sol[1]
         return X_sol, U_sol        
@@ -753,7 +757,7 @@ if __name__ == "__main__":
     from centroidal_plus_legKinematics_casadi_model import CentroidalPlusLegKinematicsCasadiModel
     from wholebody_croccodyl_solver import WholeBodyDDPSolver
     from wholebody_croccodyl_model import WholeBodyModel
-    import conf_solo12_bound_step_adjustment as conf
+    import conf_solo12_trot_step_adjustment as conf
     # import conf_bolt_humanoid_step_adjustment as conf
 
     import pinocchio as pin
@@ -774,18 +778,18 @@ if __name__ == "__main__":
     for k in range(len(centroidal_warmstart)):
         x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k]]))
         u_warmstart.append(np.concatenate([np.zeros(12), qdot_warmstart[k]]))
-    # for k in range(len(centroidal_warmstart)):
-    #     x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k]]))
-    #     u_warmstart.append(np.concatenate([np.zeros(6), qdot_warmstart[k]]))
+    for k in range(len(centroidal_warmstart)):
+        x_warmstart.append(np.concatenate([centroidal_warmstart[k], q_warmstart[k]]))
+        u_warmstart.append(np.concatenate([np.zeros(6), qdot_warmstart[k]]))
     # nominal traj-opt
     model_nom = CentroidalPlusLegKinematicsCasadiModel(conf, STOCHASTIC_OCP=False)
     solver_nom = CentroidalPlusLegKinematicsAcadosSolver(
-        model_nom, x_warmstart, u_warmstart, MPC=False)
+        model_nom, x_warmstart, u_warmstart, MPC=True)
     x_nom, u_nom = solver_nom.solve()
     # stochastic traj-opt
     model_stoch = CentroidalPlusLegKinematicsCasadiModel(conf, STOCHASTIC_OCP=True)
     solver_stoch = CentroidalPlusLegKinematicsAcadosSolver(
-        model_stoch, x_warmstart, u_warmstart, MPC=False)
+        model_stoch, x_warmstart, u_warmstart, MPC=True)
     x_stoch, u_stoch = solver_stoch.solve()
     robot = conf.solo12.robot
     # robot = conf.bolt
@@ -793,14 +797,14 @@ if __name__ == "__main__":
     dt_ctrl = 0.01
     N_ctrl =  int(dt/dt_ctrl)
     # initialize end-effector trajectories
-    FL_nom = np.zeros((3, x_nom.shape[0]-1)).astype(np.float32)
-    FR_nom = np.zeros((3, x_nom.shape[0]-1)).astype(np.float32)
-    HL_nom = np.zeros((3, x_nom.shape[0]-1)).astype(np.float32)
-    HR_nom = np.zeros((3, x_nom.shape[0]-1)).astype(np.float32)
-    FL_stoch = np.zeros((3, x_stoch.shape[0]-1)).astype(np.float32)
-    FR_stoch = np.zeros((3, x_stoch.shape[0]-1)).astype(np.float32)
-    HL_stoch = np.zeros((3, x_stoch.shape[0]-1)).astype(np.float32)
-    HR_stoch = np.zeros((3, x_stoch.shape[0]-1)).astype(np.float32)
+    FL_nom = np.zeros((3, x_nom.shape[0])).astype(np.float32)
+    FR_nom = np.zeros((3, x_nom.shape[0])).astype(np.float32)
+    HL_nom = np.zeros((3, x_nom.shape[0])).astype(np.float32)
+    HR_nom = np.zeros((3, x_nom.shape[0])).astype(np.float32)
+    FL_stoch = np.zeros((3, x_stoch.shape[0])).astype(np.float32)
+    FR_stoch = np.zeros((3, x_stoch.shape[0])).astype(np.float32)
+    HL_stoch = np.zeros((3, x_stoch.shape[0])).astype(np.float32)
+    HR_stoch = np.zeros((3, x_stoch.shape[0])).astype(np.float32)
     # visualize in meshcat
     if conf.WITH_MESHCAT_DISPLAY:
         viz = pin.visualize.MeshcatVisualizer(
@@ -833,7 +837,7 @@ if __name__ == "__main__":
                     )
             
     # visualize nominal motion
-    for k in range(conf.N-1):
+    for k in range(conf.N):
         q_base_next = np.array(
                 model_nom.casadi_model.q_plus(
                     x_warmstart[k][3:7], x_nom[k, 12:15]
@@ -853,7 +857,7 @@ if __name__ == "__main__":
             viz.display(q)
 
     # visualize stochastic motion
-    for k in range(conf.N-1):
+    for k in range(conf.N):
         q_base_next = np.array(
                 model_stoch.casadi_model.q_plus(
                     x_warmstart[k][3:7], x_stoch[k, 12:15]

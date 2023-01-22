@@ -10,10 +10,10 @@ from robot_properties_solo.solo12wrapper import Solo12Config
 dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'TROT',
-      'stepLength' : 0.12,
+      'stepLength' : 0.1,
       'stepHeight' : 0.05,
       'stepKnots' : 15,
-      'supportKnots' : 5,
+      'supportKnots' : 10,
       'nbSteps': 3}
 mu = 0.5 # linear friction coefficient
 
@@ -74,8 +74,38 @@ cov_white_noise = dt*np.diag(np.array([0.85**2, 0.4**2, 0.01**2,
                                        0.85**2, 0.4**2, 0.01**2]))
 beta_u = 0.01 # probability of constraint violation 
 
-# centroidal cost objective weights:
-# ----------------------------------
+
+# # centroidal cost objective weights TRAJ-OPT:
+# # -------------------------------------------
+# state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,    #com
+#                                 1e1, 1e1, 1e1,    #linear_momentum 
+#                                 1e2, 1e2, 1e2,    #angular_momentum 
+                              
+#                                1e-1, 1e-1, 1e-1,   #base position 
+#                                1e2, 1e2, 1e2,      #drelative base position
+                              
+#                               5e1, 5e1, 5e1,       #q_FL 
+#                               5e1, 5e1, 5e1,       #q_FR
+#                               5e1, 5e1, 5e1,       #q_HL
+#                               5e1, 5e1, 5e1])      #q_HR
+
+# control_cost_weights = 2*np.diag([1e1, 1e1, 1e1,   #FL_forces
+#                                 1e1, 1e1, 1e1,     #FR_forces
+#                                 1e1, 1e1, 1e1,     #HL_forces
+#                                 1e1, 1e1, 1e1,     #HR_forces
+                  
+#                                 1e-1, 1e-1, 1e-1,  #base linear velocity
+#                                 1e-1, 1e-1, 1e-1,  #base angular velocity  
+                                
+#                                 1e1, 1e1, 1e1,    #qdot_FL
+#                                 1e1, 1e1, 1e1,    #qdot_FR
+#                                 1e1, 1e1, 1e1,    #qdot_HL
+#                                 1e1, 1e1, 1e1     #qdot_HR
+#                                 ])
+
+
+# centroidal cost objective weights MPC:
+# -------------------------------------
 state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,    #com
                                 1e1, 1e1, 1e1,    #linear_momentum 
                                 1e2, 1e2, 1e2,    #angular_momentum 
@@ -83,10 +113,10 @@ state_cost_weights = 2*np.diag([1e2, 1e2, 1e2,    #com
                                1e-1, 1e-1, 1e-1,   #base position 
                                1e2, 1e2, 1e2,      #drelative base position
                               
-                              5e1, 5e1, 5e1,       #q_FL 
-                              5e1, 5e1, 5e1,       #q_FR
-                              5e1, 5e1, 5e1,       #q_HL
-                              5e1, 5e1, 5e1])      #q_HR
+                              5e2, 5e2, 5e2,       #q_FL 
+                              5e2, 5e2, 5e2,       #q_FR
+                              5e2, 5e2, 5e2,       #q_HL
+                              5e2, 5e2, 5e2])      #q_HR
 
 control_cost_weights = 2*np.diag([1e1, 1e1, 1e1,   #FL_forces
                                 1e1, 1e1, 1e1,     #FR_forces
@@ -105,7 +135,27 @@ control_cost_weights = 2*np.diag([1e1, 1e1, 1e1,   #FL_forces
 swing_foot_cost_weights = 2*np.diag([1e2, 1e2, 1e2, #FL 
                                    1e2, 1e2, 1e2,   #FR
                                    1e2, 1e2, 1e2,   #HL
-                                   1e2, 1e2, 1e2])  #HR                                 
+                                   1e2, 1e2, 1e2])  #HR
+# acados slack penalties MPC:
+# --------------------------- 
+
+# slack penalties on linear constraints
+L2_pen_g = np.array([1e1, 1e1, 1e2,
+                     1e1, 1e1, 1e2,
+                     1e1, 1e1, 1e2,
+                     1e1, 1e1, 1e2])#5e2
+
+L1_pen_g = np.array([1e2, 1e2, 0e1,
+                     1e2, 1e2, 0e1,
+                     1e2, 1e2, 0e1,
+                     1e2, 1e2, 0e1])#1e1                                                                                               
+
+# slack penalties on nonlinear constraints
+L2_pen_h = 0e2*np.ones(38)
+L1_pen_h = 1e2*np.ones(38)                                                                                               
+
+L2_pen = np.concatenate([L2_pen_g, L2_pen_h])
+L1_pen = np.concatenate([L1_pen_g, L1_pen_h])
 # whole-body cost objective weights:
 # ---------------------------------- 
 freeFlyerQWeight = [0.]*3 + [500.]*3
