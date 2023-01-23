@@ -154,8 +154,26 @@ swing_foot_cost_weights = 2*np.diag([1e2, 1e2, 1e2, #FL
 
 # acados slack penalties MPC:
 # ---------------------------
-L2_pen = 1e0 #without friction 1e1
-L1_pen = 5e1 #without friction 1e2 
+# L2_pen = 1e0 #without friction 1e1
+# L1_pen = 5e1 #without friction 1e2 
+
+# slack penalties on linear constraints
+L2_pen_g = np.array([1e0, 1e0, 1e0,
+                     1e0, 1e0, 1e0,
+                     1e0, 1e0, 1e0,
+                     1e0, 1e0, 1e0])
+
+L1_pen_g = np.array([5e1, 5e1, 5e1,
+                     5e1, 5e1, 5e1,
+                     5e1, 5e1, 5e1,
+                     5e1, 5e1, 5e1])                                                                                               
+
+# slack penalties on nonlinear constraints
+L2_pen_h = 1e0*np.ones(38)
+L1_pen_h = 5e1*np.ones(38)                                                                                               
+
+L2_pen = np.concatenate([L2_pen_g, L2_pen_h])
+L1_pen = np.concatenate([L1_pen_g, L1_pen_h])
 
 # whole-body cost objective weights:
 # ---------------------------------- 
