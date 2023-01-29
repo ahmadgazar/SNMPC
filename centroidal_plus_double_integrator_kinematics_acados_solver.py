@@ -780,10 +780,10 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         return AB @ Sigma_xu @ AB.T + self.W
 
 if __name__ == "__main__":
-    from centroidal_plus_legKinematics_casadi_model import CentroidalPlusLegKinematicsCasadiModel
+    from centroidal_plus_double_integrator_kinematics_casadi_model import CentroidalPlusLegKinematicsCasadiModel
     from wholebody_croccodyl_solver import WholeBodyDDPSolver
     from wholebody_croccodyl_model import WholeBodyModel
-    import conf_solo12_trot_step_adjustment as conf
+    import conf_solo12_trot_step_adjustment_full_kinematics as conf
     # import conf_bolt_humanoid_step_adjustment as conf
 
     import pinocchio as pin

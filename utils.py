@@ -302,3 +302,18 @@ def meshcat_transform(x, y, z, q, u, a, t):
 def applyViewerConfiguration(viz, name, xyzquat):
     if isinstance(viz, pin.visualize.MeshcatVisualizer):
         viz.viewer[name].set_transform(meshcat_transform(*xyzquat))
+
+   
+def interpolate_one_step(model, dt_plan, dt_ctrl, q, q_next, qdot, qdot_next, tau, tau_next):
+    nq, nv = len(q), len(qdot)
+    N_interpol = int(dt_plan/dt_ctrl)
+    q_interpol = np.zeros((N_interpol, nq))
+    qdot_interpol = np.zeros((N_interpol, nv))
+    tau_interpol = np.zeros((N_interpol, nv-6))
+    dtau = (tau_next - tau)/float(N_interpol)
+    dqdot = (qdot_next - qdot)/float(N_interpol)
+    for interpol_idx in range(N_interpol):
+        tau_interpol[interpol_idx] = tau + interpol_idx*dtau 
+        q_interpol[interpol_idx] = pin.interpolate(model, q, q_next, interpol_idx*dt_ctrl/dt_plan)
+        qdot_interpol[interpol_idx] = qdot + interpol_idx*dqdot        
+    return q_interpol, qdot_interpol, tau_interpol

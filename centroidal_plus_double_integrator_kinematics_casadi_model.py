@@ -122,7 +122,9 @@ class CentroidalPlusLegKinematicsCasadiModel:
                 )
             self.HR_frame_vel = Function.deserialize(
                 kindyn.frameVelocity(HR_frame_name, LOCAL_WORLD_ALIGNED)
-                )          
+                )
+            # rnea
+            self.rnea = Function.deserialize(kindyn.rnea())              
         elif self._robot_type == 'HUMANOID': 
             urdf = open('bolt_humanoid.urdf', 'r').read()
             kindyn = cas_kin_dyn.CasadiKinDyn(urdf)
@@ -448,7 +450,8 @@ class CentroidalPlusLegKinematicsCasadiModel:
                     ['x', 'u', 'p'], ['J_u']
                     )
         model.ee_fk = [self.fk_FR, self.fk_FL, self.fk_HR, self.fk_HL]
-        model.ee_jacobians = [self.J_FR, self.J_FL, self.J_HR, self.J_HL]            
+        model.ee_jacobians = [self.J_FR, self.J_FL, self.J_HR, self.J_HL] 
+        model.rnea = self.rnea           
         self.casadi_model = model
     
     def __setup_casadi_model_humanoid_with_leg_kinematics(self):
