@@ -304,16 +304,24 @@ def applyViewerConfiguration(viz, name, xyzquat):
         viz.viewer[name].set_transform(meshcat_transform(*xyzquat))
 
    
-def interpolate_one_step(model, dt_plan, dt_ctrl, q, q_next, qdot, qdot_next, tau, tau_next):
+def interpolate_one_step(
+        model, dt_plan, dt_ctrl, q, q_next, qdot, qdot_next, f, f_next, tau, tau_next
+    ):
     nq, nv = len(q), len(qdot)
+    nb_actuated_joints = nv-6 
     N_interpol = int(dt_plan/dt_ctrl)
     q_interpol = np.zeros((N_interpol, nq))
     qdot_interpol = np.zeros((N_interpol, nv))
-    tau_interpol = np.zeros((N_interpol, nv-6))
+    f_interpol = np.zeros((N_interpol, nb_actuated_joints))
+    tau_interpol = np.zeros((N_interpol, nb_actuated_joints))
+    df = (f_next - f)/float(N_interpol)
     dtau = (tau_next - tau)/float(N_interpol)
     dqdot = (qdot_next - qdot)/float(N_interpol)
     for interpol_idx in range(N_interpol):
-        tau_interpol[interpol_idx] = tau + interpol_idx*dtau 
-        q_interpol[interpol_idx] = pin.interpolate(model, q, q_next, interpol_idx*dt_ctrl/dt_plan)
-        qdot_interpol[interpol_idx] = qdot + interpol_idx*dqdot        
-    return q_interpol, qdot_interpol, tau_interpol
+        f_interpol[interpol_idx, :] = f + interpol_idx*df
+        tau_interpol[interpol_idx, :] = tau + interpol_idx*dtau 
+        q_interpol[interpol_idx, :] = pin.interpolate(
+            model, q, q_next, interpol_idx*dt_ctrl/dt_plan
+            )
+        qdot_interpol[interpol_idx, :] = qdot + interpol_idx*dqdot        
+    return q_interpol, qdot_interpol, f_interpol, tau_interpol
