@@ -54,7 +54,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # initialize stuff
         self.__fill_init_params()
         self.__init_pinocchio_robot()
-        # self.__create_swing_foot_cost_ref()
+        self.__create_swing_foot_cost_ref()
         # set ocp costs
         self.__fill_ocp_cost()
         # set ocp constraints
@@ -100,17 +100,17 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # cost function weights
         Q = self.state_cost_weights
         cost.W = la.block_diag(
-            Q, self.control_cost_weights
+            Q, self.control_cost_weights#, self.swing_cost_weights
             )
         cost.W_e = Q       
         # cost type
         cost.cost_type = 'LINEAR_LS'
         cost.cost_type_e = 'LINEAR_LS'
-        # cost expressions
-        ee_fk_pos = self.model.casadi_model.fk_q_bar_pos
-        ee_frame_vel = self.model.casadi_model.ee_frame_vel
-        self.ocp.model.cost_y_expr = vertcat(x, u)
-        self.ocp.model.cost_y_expr_e = x
+        # Nonlinear cost expressions
+        # ee_fk_pos = self.model.casadi_model.fk_q_bar_pos
+        # ee_frame_vel = self.model.casadi_model.ee_frame_vel
+        # self.ocp.model.cost_y_expr = vertcat(x, u, ee_frame_vel)
+        # self.ocp.model.cost_y_expr_e = x
         # initial state tracking reference
         cost.yref = np.zeros(nx+nu)
         cost.yref_e = np.zeros(nx)
@@ -180,7 +180,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # self.ocp.solver_options.sim_method_newton_iter = 1
         self.ocp.solver_options.print_level = 0
         self.ocp.solver_options.qp_solver_cond_N = N
-        self.ocp.solver_options.qp_solver_iter_max = 15
+        # self.ocp.solver_options.qp_solver_iter_max = 15
         # ocp.solver_options.sim_method_newton_iter = 10
         ## ---------------------
         ##  NLP solver settings
@@ -191,7 +191,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.ocp.solver_options.nlp_solver_tol_eq = 5e-2
         self.ocp.solver_options.nlp_solver_tol_ineq = 5e-2
         self.ocp.solver_options.nlp_solver_tol_comp = 1e-1
-        # self.ocp.solver_options.nlp_solver_max_iter = 2
+        # self.ocp.solver_options.nlp_solver_max_iter = 1
         # self.ocp.solver_options.nlp_solver_step_length=1e-20
         # self.ocp.solver_options.globalization = 'MERIT_BACKTRACKING'
         # self.ocp.solver_options.alpha_min = 0.01
@@ -206,7 +206,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
     def __generate_mpc_refs(self):
         nb_contacts, N_mpc = self.nb_contacts, self.N_mpc
         self.x_ref_mpc = self.x_init[:self.N_traj]
-        self.u_ref_mpc = self.u_ref[:self.N_traj]
+        self.u_ref_mpc = self.u_ref[:self.N_traj]                              
         contacts_logic_final = \
             self.contact_data['contacts_logic'][-1].reshape(1, nb_contacts)
         contacts_position_final = \
@@ -228,7 +228,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             self.contact_data['contacts_orient'] = np.concatenate(
                 [self.contact_data['contacts_orient'], contacts_orient_final], axis=0
                 )
-     
 
     def __warm_start(self, x_ref_N, u_ref_N):
         N_traj, N_mpc = self.N_traj, self.N_mpc
@@ -303,6 +302,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         comPercentage = nb_swing_feet/4
         foot_tasks_total = []
         com_task_total = []
+        mg = self.model._m*self.model._g
         for k in range(numKnots):
             foot_tasks = []
             for STATUS, pos in zip(feet_status, feet_pos):
@@ -322,10 +322,9 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                         dp = np.array(
                             [stepLength*(k+1)/numKnots, 0., stepHeight*(1-float(k-phKnots)/phKnots)]
                             )
-                    tref = pos + dp
-                    foot_tasks += [pinocchio.SE3(np.eye(3), tref)]
+                    foot_tasks += [np.zeros(3)]
                 elif STATUS == 'STANCE':
-                    foot_tasks += [pinocchio.SE3(np.eye(3), pos)]
+                    foot_tasks += [np.array([0., 0., -mg/(4-nb_swing_feet)])]
             foot_tasks_total += [foot_tasks]
             if nb_swing_feet == 0 :
                 com_task_total += [np.zeros(3)]
@@ -354,7 +353,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.X_sim = np.zeros((N_traj, self.N_mpc+1, self.nx))
         self.U_sim = np.zeros((N_traj, self.N_mpc, self.nu))
         # create closed-loop tuples
-        X_sol = np.zeros((N_traj+1, self.nx))
+        X_sol = np.zeros((N_traj, self.nx))
         U_sol = np.zeros((N_traj, self.nu))
         x0 = np.concatenate([self.x_init[0][:9],
                              self.x_init[0][9:12],
@@ -556,7 +555,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             self.X_sim[traj_time_idx] = x_sol
             self.U_sim[traj_time_idx] = u_sol
             # save closed-loop solution
-            X_sol[traj_time_idx+1] = x_sol[0]
+            X_sol[traj_time_idx] = x_sol[0]
             U_sol[traj_time_idx] = u_sol[0]
             # warm-start solver from the previous solution 
             x_warm_start_N = np.concatenate([x_sol[1:], x_sol[-1].reshape(1, nx)]) #x_sol
@@ -594,8 +593,10 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             ee_fk = model.casadi_model.ee_fk
             ee_jacobians = model.casadi_model.ee_jacobians
             step_bound = self.step_bound
-            # swing_feet_tasks = self.swing_feet_tasks
-            # com_tasks = self.com_tasks
+            # force references
+            f_ref = np.array(self.swing_feet_tasks).reshape(
+                len(self.swing_feet_tasks), 12
+                ) 
             # solver main loop
             for SQP_iter in range(100):
                 Sigma_k = np.zeros((nx, nx))
@@ -610,7 +611,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                              np.zeros(3),            
                              x_ref_N[time_idx][34:]  
                              ]
-                        )
+                        )        
                     u_warm_start_k = u_warm_start_N[time_idx].squeeze()
                     x_ref_goal = np.concatenate(
                            [x_ref_N[-1][:9],
@@ -630,8 +631,10 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                         x_warm_start_goal = x_warm_start_N[-1]
 
                     y_ref_k = np.concatenate(
-                        [x_ref_k,
-                        u_warm_start_k]
+                        [
+                            x_ref_k,
+                            u_warm_start_k
+                            ]
                         )
                     # set warm-start 
                     solver.set(time_idx, 'x', x_warm_start_k)
@@ -750,7 +753,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                     print(
                         "residuals after: ", SQP_iter, "SQP_RTI iterations:\n", residuals
                         )
-                    if np.linalg.norm(residuals[2]) < 5e-3:
+                    if np.linalg.norm(residuals[2]) < 5e-2:
                         print(
                             '[SUCCESS] .. ', " breaking at SQP iteration number: ",
                              SQP_iter
@@ -781,11 +784,9 @@ class CentroidalPlusLegKinematicsAcadosSolver:
 
 if __name__ == "__main__":
     from centroidal_plus_double_integrator_kinematics_casadi_model import CentroidalPlusLegKinematicsCasadiModel
+    import conf_solo12_trot_step_adjustment_full_kinematics as conf
     from wholebody_croccodyl_solver import WholeBodyDDPSolver
     from wholebody_croccodyl_model import WholeBodyModel
-    import conf_solo12_trot_step_adjustment_full_kinematics as conf
-    # import conf_bolt_humanoid_step_adjustment as conf
-
     import pinocchio as pin
     import numpy as np
     import utils

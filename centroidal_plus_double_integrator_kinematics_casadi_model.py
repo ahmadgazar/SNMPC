@@ -272,22 +272,23 @@ class CentroidalPlusLegKinematicsCasadiModel:
         z = []   
         # centroidal dynamics 
         com = x[:3]
-        contact_force_FR = u[0:3] 
-        contact_force_FL = u[3:6] 
-        contact_force_HR = u[6:9] 
-        contact_force_HL = u[9:12] 
+        contact_force_FL = u[0:3] 
+        contact_force_FR = u[3:6] 
+        contact_force_HL = u[6:9] 
+        contact_force_HR = u[9:12] 
         lin_mom = CONTACT_ACTIVATION_FR*contact_force_FR +\
                   CONTACT_ACTIVATION_FL*contact_force_FL +\
                   CONTACT_ACTIVATION_HR*contact_force_HR +\
                   CONTACT_ACTIVATION_HL*contact_force_HL
         ang_mom = CONTACT_ACTIVATION_FR*cross(
-                    (contact_position_FR-com),contact_force_FR)+\
-                  CONTACT_ACTIVATION_FL*cross(
-                    (contact_position_FL-com),contact_force_FL)+\
-                  CONTACT_ACTIVATION_HR*cross(
-                    (contact_position_HR-com),contact_force_HR)+\
-                  CONTACT_ACTIVATION_HL*cross(
-                    (contact_position_HL-com),contact_force_HL)       
+                    (contact_position_FR - com), contact_force_FR
+                    ) + CONTACT_ACTIVATION_FL*cross(
+                    (contact_position_FL - com), contact_force_FL
+                    ) + CONTACT_ACTIVATION_HR*cross(
+                    (contact_position_HR - com), contact_force_HR
+                    ) + CONTACT_ACTIVATION_HL*cross(
+                    (contact_position_HL - com), contact_force_HL
+                    )       
         mg_vector = np.array([0., 0., m*g])
         # qref [+] lambda_next =  (qref_curr [+] lambda_curr) [+] omega
         # which is equivalent to 
@@ -309,18 +310,21 @@ class CentroidalPlusLegKinematicsCasadiModel:
                     )        
         # full-kinematics com constraint
         A_com = self.com(q=q_bar)['com'] - com 
-        lb_com = np.zeros(A_com.shape[0])
-        ub_com = lb_com
+        lb_com = np.zeros(A_com.shape[0]) - 1e-3
+        ub_com = lb_com + 1e-3
+        
         # full-kinematics linear momentum constraint 
         qdot = vertcat(base_lin_vel, lamda*self._dt, joint_vel)
         nv = qdot.shape[0] 
         A_dh_linmom = self.hg(q=q_bar, v=qdot, a=MX.zeros(nv))['dh_lin'] - x[3:6]
-        lb_dh_linmom = np.zeros(A_dh_linmom.shape[0])
-        ub_dh_linmom = lb_dh_linmom
+        lb_dh_linmom = np.zeros(A_dh_linmom.shape[0]) - 1e-3
+        ub_dh_linmom = np.zeros(A_dh_linmom.shape[0]) + 1e-3
+        
         # full-kinematics angular momentum constraint 
         A_dh_angmom = self.hg(q=q_bar, v=qdot, a=MX.zeros(nv))['dh_ang'] - x[6:9]
-        lb_dh_angmom = np.zeros(A_dh_angmom.shape[0])
-        ub_dh_angmom = lb_dh_angmom
+        lb_dh_angmom = np.zeros(A_dh_angmom.shape[0]) - 1e-3
+        ub_dh_angmom = np.zeros(A_dh_angmom.shape[0]) + 1e-3
+        
         # friction pyramid constraints
         friction_pyramid_mat = construct_friction_pyramid_constraint_matrix(self)
         cone_constraints_fr = \
@@ -332,13 +336,46 @@ class CentroidalPlusLegKinematicsCasadiModel:
         cone_constraints_hl = \
             CONTACT_ACTIVATION_HL*(friction_pyramid_mat @ (reshape(R_HL,(3,3)).T)) 
         A_friction_pyramid = vertcat(
-                horzcat(cone_constraints_fl, MX.zeros(5, 9)),
-                horzcat(MX.zeros(5, 3), cone_constraints_fr, MX.zeros(5, 6)),
-                horzcat(MX.zeros(5, 6), cone_constraints_hl, MX.zeros(5, 3)),
-                horzcat(MX.zeros(5, 9), cone_constraints_hr) 
+                horzcat(cone_constraints_fl, MX.zeros(4, 9)),
+                horzcat(MX.zeros(4, 3), cone_constraints_fr, MX.zeros(4, 6)),
+                horzcat(MX.zeros(4, 6), cone_constraints_hl, MX.zeros(4, 3)),
+                horzcat(MX.zeros(4, 9), cone_constraints_hr) 
                 ) @ u[:12]
-        lb_friction_pyramid = -1e15*np.ones(A_friction_pyramid.shape[0])
+        lb_friction_pyramid = -100*np.ones(A_friction_pyramid.shape[0])
         ub_friction_pyramid = np.zeros(A_friction_pyramid.shape[0])
+        
+        # friction cone constraints
+        epsilon = 1e-6
+        mu = self._linear_friction_coefficient
+        cone_constraints_fr = \
+            CONTACT_ACTIVATION_FR*(
+                sqrt(contact_force_FR[0]**2 + contact_force_FR[1]**2 + epsilon**2) - 
+                mu*contact_force_FR[2]
+                )
+        cone_constraints_fl = \
+             CONTACT_ACTIVATION_FL*(
+                sqrt(contact_force_FL[0]**2 + contact_force_FL[1]**2 + epsilon**2) - 
+                mu*contact_force_FL[2]
+                )
+        cone_constraints_hr = \
+            CONTACT_ACTIVATION_HR*(
+                sqrt(contact_force_HR[0]**2 + contact_force_HR[1]**2 + epsilon**2) - 
+                mu*contact_force_HR[2]
+                )
+        cone_constraints_hl = \
+            CONTACT_ACTIVATION_HL*(
+                sqrt(contact_force_HL[0]**2 + contact_force_HL[1]**2 + epsilon**2) - 
+                mu*contact_force_HL[2]
+                )
+        A_friction_cone = vertcat(
+                cone_constraints_fr, 
+                cone_constraints_fl, 
+                cone_constraints_hr, 
+                cone_constraints_hl
+                ) 
+        lb_friction_cone = -100*np.ones(A_friction_cone.shape[0])
+        ub_friction_cone = np.zeros(A_friction_cone.shape[0])
+        
         # box constraints on lateral direction of the contact location
         A_contact_location_lateral = vertcat(
             CONTACT_ACTIVATION_FR*(contact_position_FR[:2]-P_FR[:2]),
@@ -360,24 +397,26 @@ class CentroidalPlusLegKinematicsCasadiModel:
             )
         lb_contact_location_vertical = np.zeros(A_contact_location_vertical.shape[0])
         ub_contact_location_vertical = lb_contact_location_vertical    
+        
         # end-effector frame velocity constraint when feet 
         # are in contact with the ground (i.e J(q).qdot = 0)
         A_frame_velocity = vertcat(
-                                CONTACT_ACTIVATION_FR*(
-                                    self.FR_frame_vel(q=q_bar, qdot=qdot)['ee_vel_linear']
-                                    ),
-                                CONTACT_ACTIVATION_FL*(
-                                    self.FL_frame_vel(q=q_bar, qdot=qdot)['ee_vel_linear']
-                                    ),
-                                CONTACT_ACTIVATION_HR*(
-                                    self.HR_frame_vel(q=q_bar, qdot=qdot)['ee_vel_linear']
-                                    ),
-                                CONTACT_ACTIVATION_HL*(
-                                    self.HL_frame_vel(q=q_bar, qdot=qdot)['ee_vel_linear']
-                                    )
-                                )         
-        lb_frame_velocity = np.zeros(A_frame_velocity.shape[0])
-        ub_frame_velocity = lb_frame_velocity
+            CONTACT_ACTIVATION_FR*(
+                self.FR_frame_vel(q=q_bar, qdot=qdot)['ee_vel_linear']
+                ),
+            CONTACT_ACTIVATION_FL*(
+                self.FL_frame_vel(q=q_bar, qdot=qdot)['ee_vel_linear']
+                ),
+            CONTACT_ACTIVATION_HR*(
+                self.HR_frame_vel(q=q_bar, qdot=qdot)['ee_vel_linear']
+                ),
+            CONTACT_ACTIVATION_HL*(
+                self.HL_frame_vel(q=q_bar, qdot=qdot)['ee_vel_linear']
+                )
+            )         
+        lb_frame_velocity = np.zeros(A_frame_velocity.shape[0]) - 1e-6
+        ub_frame_velocity = np.zeros(A_frame_velocity.shape[0]) + 1e-6
+        
         ## CasADi Model
         # define structs
         model = types.SimpleNamespace()
@@ -399,31 +438,34 @@ class CentroidalPlusLegKinematicsCasadiModel:
         model.contacts_params = contacts_params
         # concatenate constraints 
         constraints.expr = vertcat(
-            A_friction_pyramid, 
+            A_friction_cone, 
+            # A_friction_pyramid,
             A_frame_velocity,
             # A_contact_location_lateral,
             # A_contact_location_vertical,
-            # A_dh_linmom,
+            A_dh_linmom,
             A_dh_angmom,
             A_com
             )
         constraints.lb = np.hstack([
-            lb_friction_pyramid,
+            lb_friction_cone,
+            # lb_friction_pyramid,
             lb_frame_velocity,
             # lb_contact_location_lateral,
             # lb_contact_location_vertical,
-            # lb_dh_linmom,
+            lb_dh_linmom,
             lb_dh_angmom,
             lb_com
         ])
         constraints.ub = np.hstack([
-            ub_friction_pyramid,
-            ub_frame_velocity,
+            ub_friction_cone,      #4
+            # ub_friction_pyramid, #16
+            ub_frame_velocity,     #12
             # ub_contact_location_lateral,
             # ub_contact_location_vertical,
-            # ub_dh_linmom,
-            ub_dh_angmom,
-            ub_com
+            ub_dh_linmom,          #3
+            ub_dh_angmom,          #3
+            ub_com                 #3
         ])
         model.constraints = constraints
         model.q_bar = q_bar
@@ -698,5 +740,5 @@ class CentroidalPlusLegKinematicsCasadiModel:
 
 if __name__ == "__main__":
     from casadi_kin_dyn import pycasadi_kin_dyn as cas_kin_dyn
-    import conf_bolt_humanoid_step_adjustment as conf
+    import conf_solo12_trot_step_adjustment_full_kinematics as conf
     model = CentroidalPlusLegKinematicsCasadiModel(conf)
