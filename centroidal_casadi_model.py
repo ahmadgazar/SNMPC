@@ -136,10 +136,10 @@ class CentroidalModelCasadi:
         cone_constraints_hr = CONTACT_ACTIVATION_HR*(friction_pyramid_mat @ (reshape(R_HR,(3,3)).T))
         cone_constraints_hl = CONTACT_ACTIVATION_HL*(friction_pyramid_mat @ (reshape(R_HL,(3,3)).T)) 
         A = vertcat(
-                horzcat(cone_constraints_fr, MX.zeros(5, 9)),
-                horzcat(MX.zeros(5, 3), cone_constraints_fl, MX.zeros(5, 6)),
-                horzcat(MX.zeros(5, 6), cone_constraints_hr, MX.zeros(5,3)),
-                horzcat(MX.zeros(5, 9), cone_constraints_hl) 
+                horzcat(cone_constraints_fr, MX.zeros(4, 9)),
+                horzcat(MX.zeros(4, 3), cone_constraints_fl, MX.zeros(4, 6)),
+                horzcat(MX.zeros(4, 6), cone_constraints_hr, MX.zeros(4,3)),
+                horzcat(MX.zeros(4, 9), cone_constraints_hl) 
                 )
         lb = -1e15*np.ones(contacts_logic.shape[0]*friction_pyramid_mat.shape[0])
         ub = np.zeros(contacts_logic.shape[0]*friction_pyramid_mat.shape[0])

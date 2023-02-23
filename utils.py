@@ -11,8 +11,7 @@ def construct_friction_pyramid_constraint_matrix(model):
     pyramid_constraint_matrix = np.array([[1. ,  0., -mu_linear], 
                                           [-1.,  0., -mu_linear],                                     
                                           [0. ,  1., -mu_linear], 
-                                          [0. , -1., -mu_linear],
-                                          [0. ,  0., -1.]])
+                                          [0. , -1., -mu_linear]])
     return pyramid_constraint_matrix
 
 def compute_centroid(vertices):
@@ -305,23 +304,27 @@ def applyViewerConfiguration(viz, name, xyzquat):
 
    
 def interpolate_one_step(
-        model, dt_plan, dt_ctrl, q, q_next, qdot, qdot_next, f, f_next, tau, tau_next
+        model, dt_plan, dt_ctrl, 
+        q, q_next, 
+        qdot, qdot_next,
+        qddot, qddot_next, 
+        f, f_next
     ):
     nq, nv = len(q), len(qdot)
     nb_actuated_joints = nv-6 
     N_interpol = int(dt_plan/dt_ctrl)
     q_interpol = np.zeros((N_interpol, nq))
     qdot_interpol = np.zeros((N_interpol, nv))
+    qddot_interpol = np.zeros((N_interpol, nv))
     f_interpol = np.zeros((N_interpol, nb_actuated_joints))
-    tau_interpol = np.zeros((N_interpol, nb_actuated_joints))
     df = (f_next - f)/float(N_interpol)
-    dtau = (tau_next - tau)/float(N_interpol)
     dqdot = (qdot_next - qdot)/float(N_interpol)
+    dqddot = (qddot_next - qddot)/float(N_interpol)
     for interpol_idx in range(N_interpol):
-        f_interpol[interpol_idx, :] = f + interpol_idx*df
-        tau_interpol[interpol_idx, :] = tau + interpol_idx*dtau 
         q_interpol[interpol_idx, :] = pin.interpolate(
             model, q, q_next, interpol_idx*dt_ctrl/dt_plan
             )
-        qdot_interpol[interpol_idx, :] = qdot + interpol_idx*dqdot        
-    return q_interpol, qdot_interpol, f_interpol, tau_interpol
+        qdot_interpol[interpol_idx, :] = qdot + interpol_idx*dqdot
+        qddot_interpol[interpol_idx, :] = qddot + interpol_idx*dqddot        
+        f_interpol[interpol_idx, :] = f + interpol_idx*df
+    return q_interpol, qdot_interpol, qddot_interpol, f_interpol 
