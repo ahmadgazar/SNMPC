@@ -339,14 +339,165 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                 pos += [stepLength, 0., 0.] 
         return com_task_total, foot_tasks_total
 
+    def update_ocp(self, traj_time_idx, x_warm_start_N, u_warm_start_N, x0):
+        # state and control dims
+        nx, N_mpc = self.nx, self.N_mpc
+        # casadi and acados solvers
+        model = self.model
+        solver = self.acados_solver
+        STOCHASTIC = model._STOCHASTIC_OCP
+        # get dynamics jacobians
+        A = self.model.casadi_model.Jx_fun
+        B = self.model.casadi_model.Ju_fun
+        # get forward kinematics and jacobians expressions
+        ee_fk = model.casadi_model.ee_fk
+        ee_jacobians = model.casadi_model.ee_jacobians
+        step_bound = self.step_bound
+        # contact location constraint matrix dimensions
+        nb_lateral_contact_loc_constr = self.nb_contacts*2
+        nb_vertical_contact_loc_constr = self.nb_contacts
+        print('\n'+'=' * 50)
+        print('MPC Iteration ' + str(traj_time_idx))
+        print('-' * 50)
+        # update initial conditon
+        solver.set(0, "lbx", x0)
+        solver.set(0, "ubx", x0)
+        # trajectory and contact data horizon references
+        horizon_range = range(traj_time_idx, traj_time_idx+N_mpc)
+        x_ref_N = self.x_ref_mpc[horizon_range]
+        u_ref_N = self.u_ref_mpc[horizon_range]
+        contacts_logic_N =  self.contact_data['contacts_logic'][horizon_range]
+        contacts_norms_N = self.contact_data['contacts_orient'][horizon_range]
+        contacts_position_N = self.contact_data['contacts_position'][horizon_range]
+        Sigma_k = np.zeros((nx, nx))
+        # OCP loop
+        for mpc_time_idx in range(N_mpc):
+            # state stage reference
+            x_ref_k = np.concatenate([
+                x_ref_N[mpc_time_idx][:9],
+                x_ref_N[mpc_time_idx][9:12],
+                np.zeros(3),
+                x_ref_N[mpc_time_idx][16:28],
+                x_ref_N[mpc_time_idx][28:31], 
+                np.zeros(3), 
+                x_ref_N[mpc_time_idx][34:]
+                ])
+            # control stage reference
+            u_ref_k = u_ref_N[mpc_time_idx]                
+            # parameters stage references
+            contacts_logic_k = contacts_logic_N[mpc_time_idx]
+            contacts_position_k = contacts_position_N[mpc_time_idx]
+            contacts_norms_k = contacts_norms_N[mpc_time_idx].flatten()
+            qref_base_k = x_ref_N[mpc_time_idx][12:16]
+            params_k = np.concatenate([
+                contacts_logic_k, 
+                contacts_position_k, 
+                contacts_norms_k, 
+                qref_base_k
+                ])
+            # update paramters and tracking cost
+            y_ref_k = np.concatenate([x_ref_k, u_ref_k])
+            solver.set(mpc_time_idx, 'p', params_k)
+            solver.cost_set(mpc_time_idx,'yref', y_ref_k)
+            # warm-start stage nodes 
+            if traj_time_idx == 0:
+                x_warm_start_k = x_ref_k
+                u_warm_start_k = u_ref_k
+            else:
+                x_warm_start_k = x_warm_start_N[mpc_time_idx]
+                u_warm_start_k = u_warm_start_N[mpc_time_idx]  
+            solver.set(mpc_time_idx, 'x', x_warm_start_k)
+            solver.set(mpc_time_idx, 'u', u_warm_start_k)
+            # propagate uncertainties 
+            if mpc_time_idx > 0 and STOCHASTIC:
+                A_k = A(x_warm_start_k, u_warm_start_k, params_k)
+                B_k = B(x_warm_start_k, u_warm_start_k,params_k)  
+                K_k = self.compute_riccatti_gains(A_k, B_k)
+                Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k) 
+            # get the generalized position vector at the jth SQP iteration
+            base_posj_k = np.array(x_warm_start_k[9:12])
+            lambdaj_k = x_warm_start_k[12:15]
+            joint_posj_k = np.array(x_warm_start_k[15:27])
+            qj_k = np.concatenate(
+                [base_posj_k, 
+                np.array(
+                    model.casadi_model.q_plus(qref_base_k, lambdaj_k*self.dt)
+                    ).squeeze(),
+                joint_posj_k]
+            )
+            dqj_k = np.concatenate(
+                [base_posj_k, 
+                lambdaj_k,
+                joint_posj_k]
+                )
+            # intialize linearized contact location constraint matrices
+            C_lateral = np.zeros((nb_lateral_contact_loc_constr, nx))
+            lg_lateral = np.zeros(nb_lateral_contact_loc_constr)
+            ug_lateral = np.zeros(nb_lateral_contact_loc_constr)
+            C_vertical = np.zeros((nb_vertical_contact_loc_constr, nx))
+            lg_vertical = np.zeros(nb_vertical_contact_loc_constr)
+            ug_vertical = np.zeros(nb_vertical_contact_loc_constr)
+            # fill constraints for each end-effector
+            for contact_idx in range(self.nb_contacts):
+                contact_position_param = \
+                    contacts_position_k[contact_idx*3:(contact_idx*3)+3] 
+                ee_linear_jac = ee_jacobians[contact_idx](q=qj_k)['J'][:3, :]
+                contact_logic = contacts_logic_k[contact_idx]               
+                ee_Jlin_times_qj = ee_linear_jac @ dqj_k
+                contact_fk = ee_fk[contact_idx](q=qj_k)['ee_pos']
+                # activate contact location constraints only during stance
+                # lateral part (x-y direction)
+                for lateral_constraint_idx in range(2):
+                    idx = contact_idx*2 + lateral_constraint_idx
+                    constraint_row = ee_linear_jac[lateral_constraint_idx, :]
+                    C_lateral[idx, 9:27] = contact_logic*(constraint_row)
+                    temp = contact_position_param[lateral_constraint_idx] \
+                            + ee_Jlin_times_qj[lateral_constraint_idx] \
+                            - contact_fk[lateral_constraint_idx, :]
+                    # compute back-off mangnitude (only for lateral part)
+                    if mpc_time_idx >0 and STOCHASTIC:
+                        if contacts_logic_N[mpc_time_idx-1][contact_idx] != contact_logic:
+                            backoff = self.eta*np.sqrt(
+                                (constraint_row @ Sigma_next[9:27, 9:27]) @ constraint_row.T 
+                                )
+                    else:
+                        backoff = 0.
+                    lg_lateral[idx] = contact_logic*(
+                        temp - step_bound + backoff
+                        )
+                    ug_lateral[idx] = contact_logic*(
+                        temp + step_bound - backoff
+                        )
+                # vertical part (z-direction)
+                C_vertical[contact_idx, 9:27] = contact_logic*(ee_linear_jac[2, :])
+                temp = ee_Jlin_times_qj[2] - contact_fk[2] + contact_position_param[2]
+                lg_vertical[contact_idx] = contact_logic*temp 
+                ug_vertical[contact_idx] = contact_logic*temp
+            # add contatenated constraints 
+            C_total = np.concatenate([C_lateral, C_vertical], axis=0)
+            lb_total = np.concatenate([lg_lateral, lg_vertical], axis=0)
+            ub_total = np.concatenate([ug_lateral, ug_vertical], axis=0)                   
+            solver.constraints_set(mpc_time_idx, 'C', C_total, api='new')
+            solver.constraints_set(mpc_time_idx, 'lg', lb_total)
+            solver.constraints_set(mpc_time_idx, 'ug', ub_total)
+        # terminal constraints
+        # x_ref_terminal = x_ref_mpc[traj_time_idx+N_mpc]
+        # self.ocp.constraints.idxbx_e = np.array(range(self.nx))
+        # self.ocp.constraints.lbx_e = x_ref_k 
+        # self.ocp.constraints.ubx_e = x_ref_k     
+        # update terminal tracking cost
+        solver.cost_set(N_mpc,'yref', x_ref_k)
+        # warm-start the terminal node 
+        if traj_time_idx == 0:
+            solver.set(N_mpc, 'x', x_ref_k)
+        else:
+            solver.set(N_mpc, 'x', x_warm_start_k)
+    
+        
     def run_mpc(self):
         nx, nu = self.nx, self.nu
         # trajectory references
         N_traj, N_mpc = self.N_traj, self.N_mpc
-        contacts_logic = self.contact_data['contacts_logic']
-        contacts_position = self.contact_data['contacts_position']
-        contacts_norms = self.contact_data['contacts_orient']
-        x_ref_mpc, u_ref_mpc = self.x_ref_mpc, self.u_ref_mpc
         # get acados solver object
         solver = self.acados_solver
         # create open-loop tuples
@@ -355,6 +506,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # create closed-loop tuples
         X_sol = np.zeros((N_traj, self.nx))
         U_sol = np.zeros((N_traj, self.nu))
+        # intital condition
         x0 = np.concatenate([self.x_init[0][:9],
                              self.x_init[0][9:12],
                              np.zeros(3),
@@ -362,161 +514,13 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                              self.x_init[0][28:31], 
                              np.zeros(3), 
                              self.x_init[0][34:]])
-        X_sol[0] = np.copy(x0)
-        model = self.model
-        STOCHASTIC = model._STOCHASTIC_OCP
-        # initial warm-start 
-        x_warm_start_N = np.copy(x_ref_mpc[:N_mpc])
-        u_warm_start_N = np.copy(u_ref_mpc[:N_mpc])
-        # get dynamics jacobians
-        A = self.model.casadi_model.Jx_fun
-        B = self.model.casadi_model.Ju_fun
-        # get forward kinematics and jacobians expressions
-        ee_fk = model.casadi_model.ee_fk
-        ee_jacobians = model.casadi_model.ee_jacobians
-        step_bound = self.step_bound
-        nb_lateral_contact_loc_constr = self.nb_contacts*2
-        nb_vertical_contact_loc_constr = self.nb_contacts
+        # initial warm-start trajectories 
+        x_warm_start_N = np.copy(self.x_ref_mpc[:N_mpc])
+        u_warm_start_N = np.copy(self.u_ref_mpc[:N_mpc])
         # moving horizon loop
         for traj_time_idx in range(N_traj):
-            print('\n'+'=' * 50)
-            print('MPC Iteration ' + str(traj_time_idx))
-            print('-' * 50)
-            # update initial conditon
-            solver.set(0, "lbx", x0)
-            solver.set(0, "ubx", x0)
-            # get horizon references 
-            horizon_range = range(traj_time_idx, traj_time_idx+N_mpc)
-            x_ref_N = x_ref_mpc[horizon_range]
-            u_ref_N = u_ref_mpc[horizon_range]
-            contacts_logic_N = contacts_logic[horizon_range]
-            contacts_norms_N = contacts_norms[horizon_range]
-            contacts_position_N = contacts_position[horizon_range]
-            Sigma_k = np.zeros((nx, nx))
-            # OCP loop
-            for mpc_time_idx in range(N_mpc):
-                # state stage reference
-                x_ref_k = np.concatenate([
-                    x_ref_N[mpc_time_idx][:9],
-                    x_ref_N[mpc_time_idx][9:12],
-                    np.zeros(3),
-                    x_ref_N[mpc_time_idx][16:28],
-                    x_ref_N[mpc_time_idx][28:31], 
-                    np.zeros(3), 
-                    x_ref_N[mpc_time_idx][34:]
-                    ])
-                # control stage reference
-                u_ref_k = u_ref_N[mpc_time_idx]                
-                # parameters stage references
-                contacts_logic_k = contacts_logic_N[mpc_time_idx]
-                contacts_position_k = contacts_position_N[mpc_time_idx]
-                contacts_norms_k = contacts_norms_N[mpc_time_idx].flatten()
-                qref_base_k = x_ref_N[mpc_time_idx][12:16]
-                params_k = np.concatenate([
-                    contacts_logic_k, 
-                    contacts_position_k, 
-                    contacts_norms_k, 
-                    qref_base_k
-                    ])
-                # update paramters and tracking cost
-                y_ref_k = np.concatenate([x_ref_k, u_ref_k])
-                solver.set(mpc_time_idx, 'p', params_k)
-                solver.cost_set(mpc_time_idx,'yref', y_ref_k)
-                # warm-start stage nodes 
-                if traj_time_idx == 0:
-                    x_warm_start_k = x_ref_k
-                    u_warm_start_k = u_ref_k
-                else:
-                    x_warm_start_k = x_warm_start_N[mpc_time_idx]
-                    u_warm_start_k = u_warm_start_N[mpc_time_idx]    
-                solver.set(mpc_time_idx, 'x', x_warm_start_k)
-                solver.set(mpc_time_idx, 'u', u_warm_start_k)
-                # propagate uncertainties 
-                if STOCHASTIC:
-                    A_k = A(x_warm_start_k, u_warm_start_k, params_k)
-                    B_k = B(x_warm_start_k, u_warm_start_k,params_k)  
-                    K_k = self.compute_riccatti_gains(A_k, B_k)
-                    Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k) 
-                # get the generalized position vector at the jth SQP iteration
-                base_posj_k = np.array(x_warm_start_k[9:12])
-                lambdaj_k = x_warm_start_k[12:15]
-                joint_posj_k = np.array(x_warm_start_k[15:27])
-                qj_k = np.concatenate(
-                    [base_posj_k, 
-                    np.array(
-                        model.casadi_model.q_plus(qref_base_k, lambdaj_k*self.dt)
-                        ).squeeze(),
-                    joint_posj_k]
-                )
-                dqj_k = np.concatenate(
-                    [base_posj_k, 
-                    lambdaj_k,
-                    joint_posj_k]
-                    )
-                # intialize linearized contact location constraint matrices
-                C_lateral = np.zeros((nb_lateral_contact_loc_constr, nx))
-                lg_lateral = np.zeros(nb_lateral_contact_loc_constr)
-                ug_lateral = np.zeros(nb_lateral_contact_loc_constr)
-                C_vertical = np.zeros((nb_vertical_contact_loc_constr, nx))
-                lg_vertical = np.zeros(nb_vertical_contact_loc_constr)
-                ug_vertical = np.zeros(nb_vertical_contact_loc_constr)
-                # fill constraints for each end-effector
-                for contact_idx in range(self.nb_contacts):
-                    contact_position_param = \
-                        contacts_position_k[contact_idx*3:(contact_idx*3)+3] 
-                    ee_linear_jac = ee_jacobians[contact_idx](q=qj_k)['J'][:3, :]
-                    contact_logic = contacts_logic_k[contact_idx]               
-                    ee_Jlin_times_qj = ee_linear_jac @ dqj_k
-                    contact_fk = ee_fk[contact_idx](q=qj_k)['ee_pos']
-                    # activate contact location constraints only at the impact time, otherwise
-                    # contact location frame velocity is activated 
-                    # if traj_time_idx > 0 or not contacts_logic_N[mpc_time_idx-1][contact_idx]:
-                    #     print(traj_time_idx)
-                    # lateral part (x-y direction)
-                    for lateral_constraint_idx in range(2):
-                        idx = contact_idx*2 + lateral_constraint_idx
-                        constraint_row = ee_linear_jac[lateral_constraint_idx, :]
-                        C_lateral[idx, 9:27] = contact_logic*(constraint_row)
-                        temp = contact_position_param[lateral_constraint_idx] \
-                                + ee_Jlin_times_qj[lateral_constraint_idx] \
-                                - contact_fk[lateral_constraint_idx, :]
-                        # compute back-off mangnitude (only for lateral part)
-                        if STOCHASTIC:
-                            backoff = self.eta*np.sqrt(
-                                (constraint_row @ Sigma_next[9:27, 9:27]) @ constraint_row.T 
-                                )
-                        else:
-                            backoff = 0.
-                        lg_lateral[idx] = contact_logic*(
-                            temp - step_bound + backoff
-                            )
-                        ug_lateral[idx] = contact_logic*(
-                            temp + step_bound - backoff
-                            )
-                    # vertical part (z-direction)
-                    C_vertical[contact_idx, 9:27] = contact_logic*(ee_linear_jac[2, :])
-                    temp = ee_Jlin_times_qj[2] - contact_fk[2] + contact_position_param[2]
-                    lg_vertical[contact_idx] = contact_logic*temp 
-                    ug_vertical[contact_idx] = contact_logic*temp
-                # add contatenated constraints 
-                C_total = np.concatenate([C_lateral, C_vertical], axis=0)
-                lb_total = np.concatenate([lg_lateral, lg_vertical], axis=0)
-                ub_total = np.concatenate([ug_lateral, ug_vertical], axis=0)                   
-                solver.constraints_set(mpc_time_idx, 'C', C_total, api='new')
-                solver.constraints_set(mpc_time_idx, 'lg', lb_total)
-                solver.constraints_set(mpc_time_idx, 'ug', ub_total)
-            # terminal constraints
-            # x_ref_terminal = x_ref_mpc[traj_time_idx+N_mpc]
-            # self.ocp.constraints.idxbx_e = np.array(range(self.nx))
-            # self.ocp.constraints.lbx_e = x_ref_k 
-            # self.ocp.constraints.ubx_e = x_ref_k     
-            # update terminal tracking cost
-            solver.cost_set(N_mpc,'yref', x_ref_k)
-            # warm-start the terminal node 
-            if traj_time_idx == 0:
-                solver.set(N_mpc, 'x', x_ref_k)
-            else:
-                solver.set(N_mpc, 'x', x_warm_start_k)    
+            # update ocp
+            self.update_ocp(traj_time_idx, x_warm_start_N, u_warm_start_N, x0)
             # solve OCP
             if self.ocp.solver_options.nlp_solver_type == 'SQP_RTI':
                 # QP preparation rti_phase:

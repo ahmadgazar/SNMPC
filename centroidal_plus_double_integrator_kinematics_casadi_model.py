@@ -1,4 +1,5 @@
-from utils import construct_friction_pyramid_constraint_matrix, quaternion_plus_casadi_fun
+from utils import quaternion_plus_casadi_fun, quaternion_minus_casadi_fun
+from utils import construct_friction_pyramid_constraint_matrix
 from casadi_kin_dyn import pycasadi_kin_dyn as cas_kin_dyn
 from contact_plan import create_contact_trajectory
 from casadi import *
@@ -469,7 +470,8 @@ class CentroidalPlusLegKinematicsCasadiModel:
         ])
         model.constraints = constraints
         model.q_bar = q_bar
-        model.q_plus = quaternion_plus_casadi_fun() 
+        model.q_plus = quaternion_plus_casadi_fun()
+        model.q_minus = quaternion_minus_casadi_fun() 
         model.fk_q_bar_pos = vertcat(
             self.fk_FL(q=q_bar)['ee_pos'], 
             self.fk_FR(q=q_bar)['ee_pos'],
