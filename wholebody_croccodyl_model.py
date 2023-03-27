@@ -34,6 +34,8 @@ class WholeBodyModel:
             self.create_pace_models()
         elif self.gait['type'] == 'BOUND':    
             self.create_bound_models()
+        elif self.gait['type'] == 'JUMP':    
+            self.create_jump_models()
 
     def __set_contact_frame_names_and_indices(self):
         ee_frame_names = self.ee_frame_names
@@ -272,6 +274,35 @@ class WholeBodyModel:
                 elif phase == 'rhlhStep':
                     loco3dModel += self.createSingleSupportFootstepModels([rhFootPos0, lhFootPos0], 
                                     [self.rfFootId, self.lfFootId], [self.rhFootId, self.lhFootId])
+        self.running_models = loco3dModel
+
+    def create_jump_models(self):
+        # Compute the current foot positions
+        x0 = self.rmodel.defaultState
+        q0 = x0[:self.rmodel.nq]
+        pinocchio.forwardKinematics(self.rmodel, self.rdata, q0)
+        pinocchio.updateFramePlacements(self.rmodel, self.rdata)
+        rfFootPos0 = self.rdata.oMf[self.rfFootId].translation
+        rhFootPos0 = self.rdata.oMf[self.rhFootId].translation
+        lfFootPos0 = self.rdata.oMf[self.lfFootId].translation
+        lhFootPos0 = self.rdata.oMf[self.lhFootId].translation
+        self.comRef = (rfFootPos0 + rhFootPos0 + lfFootPos0 + lhFootPos0) / 4
+        self.comRef[2] = pinocchio.centerOfMass(self.rmodel, self.rdata, q0)[2].item()
+        self.time_idx = 0
+        # Defining the action models along the time instances
+        loco3dModel = []
+        for gait in self.gait_templates:
+            for phase in gait:
+                if phase == 'doubleSupport':
+                    loco3dModel += self.createDoubleSupportFootstepModels(
+                        [lfFootPos0, rfFootPos0, lhFootPos0, rhFootPos0]
+                        )
+                elif phase == 'NONE':
+                    loco3dModel += self.createSingleSupportFootstepModels(
+                        [rfFootPos0, lfFootPos0, rhFootPos0, lhFootPos0], 
+                        [], 
+                        [self.rfFootId, self.lfFootId, self.rhFootId, self.lhFootId]
+                        )              
         self.running_models = loco3dModel
 
     def createDoubleSupportFootstepModels(self, feetPos):
