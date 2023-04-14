@@ -92,9 +92,9 @@ def compute_5th_order_poly_traj(x0, x1, T, dt):
     return x, dx, ddx
 
 
-# def normalize_quaternion(q):
-#     norm = np.sqrt((q[0]**2) + (q[1]**2) + (q[2]**2) + (q[3]**2))
-#     return q/norm 
+def normalize_quaternion(q):
+    norm = np.sqrt((q[0]**2) + (q[1]**2) + (q[2]**2) + (q[3]**2))
+    return q/norm 
 
 def quaternion_multiplication(q1, q2):
     w1, v1 = q1[3], q1[0:3]
@@ -112,51 +112,13 @@ def quaternion_plus_casadi_fun():
     omega = MX.sym('w', 3, 1)
     # w1, v1 = q[3], q[0:3]
     q2 = vertcat(0.5*omega, 0.)
+    q_next = quaternion_multiplication(q2, q1)
     # v_next = w1*v2 + w2*v1 + (mtimes(skew(v1), v2))
     return Function(
         'quaternion_plus',
         [q1, omega], 
-        [quaternion_multiplication(q1, q2)]
+        [q_next]
     )
-
-# def log_quaternion_casadi(q):
-#     v_norm = norm_2(q[0:3])
-#     q_norm = norm_2(q)
-#     tolerance = 1e-6
-#     q1 = MX.zeros(4)
-#     q1[3] = log(q_norm)
-#     q2 = MX.zeros(4)
-#     q2[0] = (acos(q[3]/q_norm))*q[0]
-#     q2[1] = (acos(q[3]/q_norm))*q[1]
-#     q2[2] = (acos(q[3]/q_norm))*q[2]
-#     q2[3] = log(q_norm)
-#     return if_else(
-#         v_norm < tolerance, q1, q2, False
-#         )
-
-# def quaternion_minus_casadi_fun():
-#    q1 = MX.sym('q1', 4, 1)
-#    q2 = MX.sym('q2', 4, 1)
-#    q2conjugate = vertcat(-q2[0], -q2[1], -q2[2], q2[3])
-#    dq = quaternion_multiplication(q2conjugate, q1)
-#    return Function(
-#         'quaternion_minus',
-#         [q1, q2],
-#         [log_quaternion_casadi(dq)]
-#         )
-
-def exp_quaternion_casadi(w):
-    q1exp = MX.zeros(4)
-    q2exp = MX.zeros(4)
-    th = norm_2(w)
-    # taylor expansion
-    q1exp[:3] = w*(1-(th**2)/6)
-    q1exp[3] = 1-(th**2)/2
-    q2exp[:3] = (w/th)*np.sin(th) 
-    q2exp[3] = np.cos(th)
-    return if_else(
-        th ** 2 <= 1.0e-6, q1exp, q2exp, True
-        )
 
 def log_quaternion_casadi(q):
     """ lives on the tangent space of SO(3) """
@@ -169,12 +131,6 @@ def log_quaternion_casadi(q):
         vnorm <= 1.0e-6, q1log, q2log, True
         )
 
-def quaternion_product_casadi(q1, q2):
-    """ computes quaternion product of q1 x q2 """
-    v = cross(q1[:3], q2[:3]) + q2[3] * q1[:3] + q1[3] * q2[:3]
-    w = q1[3]*q2[3] - (q1[:3].T @ q2[:3])
-    return vertcat(v, w)
-
 def quaternion_minus_casadi_fun():
     """computes the tangent vector from q1 to q2 at Identity
     returns vecotr w
@@ -185,13 +141,32 @@ def quaternion_minus_casadi_fun():
     # first compute dq s.t.  q2 = q1 (circle cross) dq
     q1conjugate = vertcat(-q1[0], -q1[1], -q1[2], q1[3])
     # order of multiplication is very essential here
-    dq = quaternion_product_casadi(q1conjugate, q2)
+    dq = quaternion_multiplication(q1conjugate, q2)
     # increment is log of dq
     return Function(
         'quaternion_minus',
         [q1, q2],
         [log_quaternion_casadi(dq)]
         )
+
+# def exp_quaternion_casadi(w):
+#     q1exp = MX.zeros(4)
+#     q2exp = MX.zeros(4)
+#     th = norm_2(w)
+#     # taylor expansion
+#     q1exp[:3] = w*(1-(th**2)/6)
+#     q1exp[3] = 1-(th**2)/2
+#     q2exp[:3] = (w/th)*np.sin(th) 
+#     q2exp[3] = np.cos(th)
+#     return if_else(
+#         th ** 2 <= 1.0e-6, q1exp, q2exp, True
+#         )
+
+# def quaternion_product_casadi(q1, q2):
+#     """ computes quaternion product of q1 x q2 """
+#     v = cross(q1[:3], q2[:3]) + q2[3] * q1[:3] + q1[3] * q2[:3]
+#     w = q1[3]*q2[3] - (q1[:3].T @ q2[:3])
+#     return vertcat(v, w)
 
 # def quaternion_plus_casadi_fun():
 #     """ updates quaternion with tangent vector w """
@@ -201,10 +176,8 @@ def quaternion_minus_casadi_fun():
 #     return Function(
 #         'quaternion_plus',
 #         [q, w],
-#         [quaternion_product_casadi(q, dq)]
+#         [quaternion_multiplication(q, dq)]
 #         )
-
-    
 
 def quatToRot_casadi(q):
     R = SX.zeros(3, 3)
@@ -273,7 +246,7 @@ def meshcat_material(r, g, b, a):
         material = meshcat.geometry.MeshPhongMaterial()
         material.color = int(r * 255) * 256 ** 2 + int(g * 255) * 256 + int(b * 255)
         material.opacity = a
-        material.linewidth = 3.0
+        material.linewidth = 5.0
         return material
 
 def addViewerBox(viz, name, sizex, sizey, sizez, rgba):
@@ -291,6 +264,13 @@ def addViewerBox(viz, name, sizex, sizey, sizez, rgba):
 def addLineSegment(viz, name, vertices, rgba):
     if isinstance(viz, pin.visualize.MeshcatVisualizer):
         viz.viewer[name].set_object(meshcat.geometry.LineSegments(
+                    meshcat.geometry.PointsGeometry(np.array(vertices)),     
+                    meshcat_material(*rgba)
+                    ))
+
+def addPoint(viz, name, vertices, rgba):
+    if isinstance(viz, pin.visualize.MeshcatVisualizer):
+        viz.viewer[name].set_object(meshcat.geometry.Points(
                     meshcat.geometry.PointsGeometry(np.array(vertices)),     
                     meshcat_material(*rgba)
                     ))
