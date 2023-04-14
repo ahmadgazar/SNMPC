@@ -835,7 +835,6 @@ if __name__ == "__main__":
                     viz, 'world/contact'+str(i)+str(contact_idx), 
                     [t[0], t[1], 0., 1, 0, 0, 0]
                     )
-            
     # visualize nominal motion
     for k in range(conf.N):
         q_base_next = np.array(
