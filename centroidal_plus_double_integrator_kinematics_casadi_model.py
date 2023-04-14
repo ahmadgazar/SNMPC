@@ -15,6 +15,7 @@ class CentroidalPlusLegKinematicsCasadiModel:
         self._rmodel = conf.rmodel
         self._gait = conf.gait
         self._gait_templates = conf.gait_templates
+        self._contact_sequence = conf.contact_sequence
         self._q0 = conf.q0
         self._n_x = conf.n_x  
         self._n_u = conf.n_u  
