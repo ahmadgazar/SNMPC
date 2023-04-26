@@ -350,17 +350,17 @@ def create_climbing_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0
                     contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, x=hrFootPos[0], 
                                           y=hrFootPos[1], z=hrFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    frFootPos[2] += stepHeight
+                    hlFootPos[2] += stepHeight  
                     frFootPos[0] += stepLength
                     hlFootPos[0] += stepLength
-                    frFootPos[2] += 0.5*stepHeight
-                    hlFootPos[2] += 0.5*stepHeight
                   elif phase == 'rfStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
                     contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, x=flFootPos[0], 
                                           y=flFootPos[1], z=flFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
                     frFootPos[0] += stepLength
-                    frFootPos[2] += 0.5*stepHeight
+                    frFootPos[2] += stepHeight
                   elif phase == 'lfrhStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],
@@ -369,17 +369,18 @@ def create_climbing_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0
                     contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, ACTIVE=False))
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, x=hlFootPos[0], 
                                           y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+           
+                    flFootPos[2] += stepHeight
+                    hrFootPos[2] += stepHeight  
                     flFootPos[0] += stepLength
-                    hrFootPos[0] += stepLength
-                    flFootPos[2] += 0.5*stepHeight
-                    hrFootPos[2] += 0.5*stepHeight          
+                    hrFootPos[0] += stepLength        
                   elif phase == 'lfStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],  
                                           y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
                     contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, ACTIVE=False))
                     flFootPos[0] += stepLength
-                    flFootPos[2] += 0.5*stepHeight
+                    flFootPos[2] += stepHeight
                   elif phase == 'rfrhStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
@@ -390,8 +391,8 @@ def create_climbing_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0
                                          y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
                     frFootPos[0] += stepLength
                     hrFootPos[0] += stepLength
-                    frFootPos[2] += 0.5*stepHeight
-                    hrFootPos[2] += 0.5*stepHeight        
+                    frFootPos[2] += stepHeight
+                    hrFootPos[2] += stepHeight        
                   elif phase == 'lflhStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],  
@@ -402,8 +403,8 @@ def create_climbing_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
                     flFootPos[0] += stepLength
                     hlFootPos[0] += stepLength
-                    flFootPos[2] += 0.5*stepHeight
-                    hlFootPos[2] += 0.5*stepHeight
+                    flFootPos[2] += stepHeight
+                    hlFootPos[2] += stepHeight
                   elif phase == 'rflfStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
@@ -414,8 +415,8 @@ def create_climbing_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0
                                           y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
                     frFootPos[0] += stepLength
                     flFootPos[0] += stepLength
-                    frFootPos[2] += 0.5*stepHeight
-                    flFootPos[2] += 0.5*stepHeight      
+                    frFootPos[2] += stepHeight
+                    flFootPos[2] += stepHeight      
                   elif phase == 'rhlhStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],  
@@ -426,8 +427,8 @@ def create_climbing_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
                     hrFootPos[0] += stepLength
                     hlFootPos[0] += stepLength
-                    hrFootPos[2] += 0.5*stepHeight
-                    hlFootPos[2] += 0.5*stepHeight
+                    hrFootPos[2] += stepHeight
+                    hlFootPos[2] += stepHeight
                   else:
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
@@ -436,13 +437,193 @@ def create_climbing_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
                     frFootPos[0] += stepLength
                     flFootPos[0] += stepLength
-                    frFootPos[2] += 0.5*stepHeight
-                    flFootPos[2] += 0.5*stepHeight
+                    frFootPos[2] += stepHeight
+                    flFootPos[2] += stepHeight
                     if rmodel.type == 'QUADRUPED':
                         hrFootPos[0] += stepLength      
                         hlFootPos[0] += stepLength
-                        hrFootPos[2] += 0.5*stepHeight      
-                        hlFootPos[2] += 0.5*stepHeight  
+                        hrFootPos[2] += stepHeight      
+                        hlFootPos[2] += stepHeight  
+                  t_start = t_end
+                  contact_sequence += [contact_sequence_k] 
+      return gait_templates, contact_sequence
+
+def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
+      gait_templates = []
+      steps = gait['nbSteps']
+      if gait['type'] == 'TROT':
+            for step in range (steps):
+                  if step < steps-1:
+                        gait_templates += [['doubleSupport', 'rflhStep', 'doubleSupport', 'lfrhStep']]
+                  else:
+                        gait_templates += [['doubleSupport', 
+                                            'rflhStep', 'doubleSupport', 
+                                            'lfrhStep', 'doubleSupport']]
+      elif gait['type'] =='PACE':
+            if rmodel.type == 'QUADRUPDED':
+                for step in range (steps):
+                    if step < steps-1:
+                        gait_templates += [['doubleSupport', 'rfrhStep', 'doubleSupport', 'lflhStep']]
+                    else:
+                        gait_templates += [['doubleSupport', 
+                                            'rfrhStep', 'doubleSupport', 
+                                            'lflhStep', 'doubleSupport']]
+            elif rmodel.type == 'HUMANOID':
+                for step in range (steps):
+                    if step < steps-1:
+                        gait_templates += [['doubleSupport', 'rfStep', 'doubleSupport', 'lfStep']]
+                    else:
+                        gait_templates += [['doubleSupport', 
+                                            'rfStep', 'doubleSupport', 
+                                            'lfStep', 'doubleSupport']]                           
+      elif gait['type'] == 'BOUND':
+            for step in range (steps):
+                  if step < steps-1:
+                        gait_templates += [['doubleSupport', 'rflfStep', 'doubleSupport', 'rhlhStep']]
+                  else:
+                        gait_templates += [['doubleSupport', 
+                                            'rflfStep', 'doubleSupport', 
+                                            'rhlhStep', 'doubleSupport']]              
+      pin.forwardKinematics(rmodel, rdata, q0)
+      pin.updateFramePlacements(rmodel, rdata)
+      if rmodel.type == 'QUADRUPED':
+        hlFootPos = rdata.oMf[rmodel.getFrameId(ee_frame_names[2])].translation
+        hrFootPos = rdata.oMf[rmodel.getFrameId(ee_frame_names[3])].translation
+      flFootPos = rdata.oMf[rmodel.getFrameId(ee_frame_names[0])].translation
+      frFootPos = rdata.oMf[rmodel.getFrameId(ee_frame_names[1])].translation
+      t_start = 0.0 
+      contact_sequence = []
+      stepKnots, supportKnots = gait['stepKnots'], gait['supportKnots']
+      stepLength = gait['stepLength']
+      stepHeight = gait['stepHeight']
+      for i, gait in enumerate(gait_templates):
+            for phase in gait:
+                  contact_sequence_k = []
+                  if rmodel.type == 'QUADRUPED' and phase == 'doubleSupport':
+                    t_end = t_start + supportKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0], 
+                                         y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, x=flFootPos[0], 
+                                         y=flFootPos[1], z=flFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, x=hrFootPos[0],
+                                          y=hrFootPos[1], z=hrFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, x=hlFootPos[0],  
+                                          y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                  elif rmodel.type == 'HUMANOID'  and phase == 'doubleSupport':
+                    t_end = t_start + supportKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0], 
+                                          y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, x=flFootPos[0],  
+                                          y=flFootPos[1], z=flFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))        
+                  elif phase == 'rflhStep':
+                    t_end = t_start + stepKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, x=flFootPos[0],  
+                                          y=flFootPos[1], z=flFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, x=hrFootPos[0], 
+                                          y=hrFootPos[1], z=hrFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    if i%2 == 0:
+                      frFootPos[2] += stepHeight
+                      hlFootPos[2] += stepHeight
+                    else:
+                      frFootPos[2] -= stepHeight
+                      hlFootPos[2] -= stepHeight  
+                    frFootPos[0] += stepLength
+                    hlFootPos[0] += stepLength
+                  elif phase == 'rfStep':
+                    t_end = t_start + stepKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, x=flFootPos[0], 
+                                          y=flFootPos[1], z=flFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    frFootPos[0] += stepLength
+                    frFootPos[2] += stepHeight
+                  elif phase == 'lfrhStep':
+                    t_end = t_start + stepKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],
+                                          y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, x=hlFootPos[0], 
+                                          y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    if i%2 == 0:
+                      flFootPos[2] += stepHeight
+                      hrFootPos[2] += stepHeight
+                    else:
+                      flFootPos[2] -= stepHeight
+                      hrFootPos[2] -= stepHeight  
+                    flFootPos[0] += stepLength
+                    hrFootPos[0] += stepLength        
+                  elif phase == 'lfStep':
+                    t_end = t_start + stepKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],  
+                                          y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    flFootPos[0] += stepLength
+                    flFootPos[2] += stepHeight
+                  elif phase == 'rfrhStep':
+                    t_end = t_start + stepKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, x=flFootPos[0],  
+                                         y=flFootPos[1], z=flFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, x=hlFootPos[0],  
+                                         y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    frFootPos[0] += stepLength
+                    hrFootPos[0] += stepLength
+                    frFootPos[2] += stepHeight
+                    hrFootPos[2] += stepHeight        
+                  elif phase == 'lflhStep':
+                    t_end = t_start + stepKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],  
+                                          y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, x=hrFootPos[0], 
+                                          y=hrFootPos[1], z=hrFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    flFootPos[0] += stepLength
+                    hlFootPos[0] += stepLength
+                    flFootPos[2] += stepHeight
+                    hlFootPos[2] += stepHeight
+                  elif phase == 'rflfStep':
+                    t_end = t_start + stepKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, x=hrFootPos[0],  
+                                          y=hrFootPos[1], z=hrFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, x=hlFootPos[0],  
+                                          y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    frFootPos[0] += stepLength
+                    flFootPos[0] += stepLength
+                    frFootPos[2] += stepHeight
+                    flFootPos[2] += stepHeight      
+                  elif phase == 'rhlhStep':
+                    t_end = t_start + stepKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],  
+                                          y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, x=flFootPos[0], 
+                                          y=flFootPos[1], z=flFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))                        
+                    contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    hrFootPos[0] += stepLength
+                    hlFootPos[0] += stepLength
+                    hrFootPos[2] += stepHeight
+                    hlFootPos[2] += stepHeight
+                  else:
+                    t_end = t_start + stepKnots*dt
+                    contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    frFootPos[0] += stepLength
+                    flFootPos[0] += stepLength
+                    frFootPos[2] += stepHeight
+                    flFootPos[2] += stepHeight
+                    if rmodel.type == 'QUADRUPED':
+                        hrFootPos[0] += stepLength      
+                        hlFootPos[0] += stepLength
+                        hrFootPos[2] += stepHeight      
+                        hlFootPos[2] += stepHeight  
                   t_start = t_end
                   contact_sequence += [contact_sequence_k] 
       return gait_templates, contact_sequence

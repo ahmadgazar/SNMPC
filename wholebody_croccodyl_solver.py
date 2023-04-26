@@ -1,8 +1,11 @@
-from re import M
 import crocoddyl
 import pinocchio
 import numpy as np
+import sys
 
+src_path = sys.path.append("/home/agazar/devel/workspace/src/gnms/python/sqp_ocp/solvers")
+from gnms_cpp import GNMSCPP 
+ 
 class WholeBodyDDPSolver:
     # constructor
     def __init__(self, model, centroidalTask=None, forceTask=None, MPC=False, WARM_START=True):
@@ -38,7 +41,7 @@ class WholeBodyDDPSolver:
             ocp = crocoddyl.ShootingProblem(self.x0, 
                                 wbd_model.running_models, 
                                 wbd_model.terminal_model)
-            self.solver = crocoddyl.SolverFDDP(ocp)
+            self.solver = crocoddyl.SolverFDDP(ocp)#GNMSCPP(ocp, VERBOSE=True)
             self.solver.setCallbacks([crocoddyl.CallbackLogger(),
                                     crocoddyl.CallbackVerbose()])     
     
@@ -67,7 +70,7 @@ class WholeBodyDDPSolver:
             self.add_force_tracking_cost(running_models_N, forceTask_N)    
         terminal_model = running_models_N[-1]
         ocp = crocoddyl.ShootingProblem(self.x0, running_models_N, terminal_model)
-        solver = crocoddyl.SolverFDDP(ocp)
+        solver = crocoddyl.SolverFDDP(ocp)#GNMSCPP(ocp, VERBOSE=True)
         solver.setCallbacks([crocoddyl.CallbackLogger(),
                           crocoddyl.CallbackVerbose()]) 
         x0 = self.x0
@@ -263,7 +266,7 @@ class WholeBodyDDPSolver:
             self.add_force_tracking_cost(running_models_N, forceTask)
         current_terminal_model = running_models_N[-1]
         ocp = crocoddyl.ShootingProblem(self.x0, running_models_N, current_terminal_model)
-        self.solver = crocoddyl.SolverFDDP(ocp)
+        self.solver = crocoddyl.SolverFDDP(ocp)#GNMSCPP(ocp, VERBOSE=True)
         self.solver.setCallbacks([crocoddyl.CallbackLogger(),
                                 crocoddyl.CallbackVerbose()])         
 

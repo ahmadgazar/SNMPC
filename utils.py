@@ -149,36 +149,6 @@ def quaternion_minus_casadi_fun():
         [log_quaternion_casadi(dq)]
         )
 
-# def exp_quaternion_casadi(w):
-#     q1exp = MX.zeros(4)
-#     q2exp = MX.zeros(4)
-#     th = norm_2(w)
-#     # taylor expansion
-#     q1exp[:3] = w*(1-(th**2)/6)
-#     q1exp[3] = 1-(th**2)/2
-#     q2exp[:3] = (w/th)*np.sin(th) 
-#     q2exp[3] = np.cos(th)
-#     return if_else(
-#         th ** 2 <= 1.0e-6, q1exp, q2exp, True
-#         )
-
-# def quaternion_product_casadi(q1, q2):
-#     """ computes quaternion product of q1 x q2 """
-#     v = cross(q1[:3], q2[:3]) + q2[3] * q1[:3] + q1[3] * q2[:3]
-#     w = q1[3]*q2[3] - (q1[:3].T @ q2[:3])
-#     return vertcat(v, w)
-
-# def quaternion_plus_casadi_fun():
-#     """ updates quaternion with tangent vector w """
-#     q = MX.sym('q', 4, 1)
-#     w = MX.sym('w', 3, 1)
-#     dq = exp_quaternion_casadi(0.5 * w)
-#     return Function(
-#         'quaternion_plus',
-#         [q, w],
-#         [quaternion_multiplication(q, dq)]
-#         )
-
 def quatToRot_casadi(q):
     R = SX.zeros(3, 3)
     qi = q[0]; qj = q[1]; qk = q[2]; qr = q[3]
@@ -253,13 +223,6 @@ def addViewerBox(viz, name, sizex, sizey, sizez, rgba):
     if isinstance(viz, pin.visualize.MeshcatVisualizer):
         viz.viewer[name].set_object(meshcat.geometry.Box([sizex, sizey, sizez]),
                                 meshcat_material(*rgba))
-
-# def addLineSegment(viz, name, vertices, rgba):
-#     if isinstance(viz, pin.visualize.MeshcatVisualizer):
-#         viz.viewer[name].set_object(meshcat.geometry.Points(
-#                     meshcat.geometry.PointsGeometry(vertices),     
-#                     meshcat_material(*rgba)
-#                     ))
 
 def addLineSegment(viz, name, vertices, rgba):
     if isinstance(viz, pin.visualize.MeshcatVisualizer):

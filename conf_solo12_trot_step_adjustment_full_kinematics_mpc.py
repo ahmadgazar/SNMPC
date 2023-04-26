@@ -1,20 +1,22 @@
 import numpy as np
 import pinocchio as pin 
 import example_robot_data 
-from contact_plan import create_contact_sequence
 from casadi_kin_dyn import pycasadi_kin_dyn as cas_kin_dyn
 from robot_properties_solo.solo12wrapper import Solo12Config
+from contact_plan import create_contact_sequence, create_climbing_contact_sequence, create_hiking_contact_sequence
+
 
 # walking parameters:
 # -------------------
 dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'TROT',
-      'stepLength' : 0.12,
-      'stepHeight' : 0.05,
-      'stepKnots' : 15,
-      'supportKnots' : 10,
-      'nbSteps': 4}
+       'terrain': 'HIKE',
+       'stepLength' : 0.15, 
+       'stepHeight' : 0.05,
+       'stepKnots' : 15,
+       'supportKnots' : 10,
+       'nbSteps': 2}
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
@@ -49,9 +51,18 @@ q0[0] = 0.0
 urdf = open('solo12.urdf', 'r').read()
 kindyn = cas_kin_dyn.CasadiKinDyn(urdf)
 joint_names = kindyn.joint_names()
-gait_templates, contact_sequence = create_contact_sequence(
-      dt, gait, ee_frame_names, rmodel, rdata, q0
-      )
+if gait['terrain'] == 'FLAT':
+      gait_templates, contact_sequence = create_contact_sequence(
+            dt, gait, ee_frame_names, rmodel, rdata, q0
+            )
+elif gait['terrain'] == 'CLIMB':
+      gait_templates, contact_sequence = create_climbing_contact_sequence(
+            dt, gait, ee_frame_names, rmodel, rdata, q0
+            )
+elif gait['terrain'] == 'HIKE':
+      gait_templates, contact_sequence = create_hiking_contact_sequence(
+            dt, gait, ee_frame_names, rmodel, rdata, q0
+            )      
 # planning and control horizon lengths:   
 # -------------------------------------
 N = int(round(contact_sequence[-1][0].t_end/dt, 2))
@@ -84,10 +95,10 @@ state_cost_weights = 2*np.diag([1e3, 1e3, 1e3,    #com
                                1e1, 1e1, 1e1,     #base position 
                                5e2, 5e2, 5e2,     #drelative base position
                               
-                               1e2, 1e2, 1e2,     #q_FL 
-                               1e2, 1e2, 1e2,     #q_FR
-                               1e2, 1e2, 1e2,     #q_HL
-                               1e2, 1e2, 1e2,     #q_HR
+                               2e2, 2e2, 2e2,     #q_FL 
+                               2e2, 2e2, 2e2,     #q_FR
+                               2e2, 2e2, 2e2,     #q_HL
+                               2e2, 2e2, 2e2,     #q_HR
 
                                5e0, 5e0, 5e0,     #base linear velocity 
                                1e2, 1e2, 1e2,     #base angular velocity
@@ -154,7 +165,7 @@ L1_contact_location_lateral = 8*[0e0]
 L1_contact_location_vertical = 4*[0e0]
 L1_friction_pyramid = 16*[1e2]
 L1_friction_cone = 4*[5e0]
-L1_pen_frame_vel = 12*[5e1]
+L1_pen_frame_vel = 12*[1e2]
 L1_pen_lin_mom = 3*[0e0]
 L1_pen_ang_mom = 3*[0e0]
 L1_pen_com = 3*[0e0]
