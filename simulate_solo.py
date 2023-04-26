@@ -1,6 +1,4 @@
 from time import time
-from robot_properties_solo.solo12wrapper import Solo12Robot
-from bullet_utils.env import BulletEnvWithGround
 from typing import Sequence, Tuple
 import jax.numpy as jnp 
 import pinocchio as pin
@@ -53,9 +51,9 @@ class Simulator:
         baseOrientation=orientation)
 
   def build_one_stepstone(self,
-    start_pos = (0.0, 0.14695, 0.0),
+    start_pos = (0.0, 0., 0.0),
     stone_length = 0.1,
-    stone_height = 0.01,
+    stone_height = 0.,
     stone_width = 0.1,
     orientation  = (0, 0, 0, 1),
     gap_length = 0.0,
@@ -70,7 +68,7 @@ class Simulator:
         orientation=orientation,
         rgba_color=rgba_color,
         mass=0)
-    # pybullet.changeDynamics(step_stone_id, -1, lateralFriction=0.4)    
+    pybullet.changeDynamics(step_stone_id, -1, lateralFriction=0.5)    
     end_pos = start_pos + np.array([stone_length, 0, 0])
     return end_pos, step_stone_id   
   
