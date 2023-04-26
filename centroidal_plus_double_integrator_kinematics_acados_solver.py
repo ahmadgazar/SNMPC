@@ -571,12 +571,14 @@ class CentroidalPlusLegKinematicsAcadosSolver:
     def solve(self):
         model = self.model
         STOCHASTIC = model._STOCHASTIC_OCP
+        nx, nu, N = self.nx, self.nu, self.N_traj
+        # save LQR gains
+        K_total = np.zeros((N, nu, nx)) 
         if STOCHASTIC:
             self.eta = norm.ppf(1-self.model._beta_u)
         if self.RECEEDING_HORIZON:
             X_sim, U_sim = self.run_mpc()
         else:
-            nx, N = self.nx, self.N_traj
             # reference trajectories 
             x_ref_N = self.x_init
             u_ref_N = self.u_ref
@@ -600,7 +602,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
             # force references
             f_ref = np.array(self.swing_feet_tasks).reshape(
                 len(self.swing_feet_tasks), 12
-                ) 
+                )
             # solver main loop
             for SQP_iter in range(100):
                 Sigma_k = np.zeros((nx, nx))
@@ -662,7 +664,9 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                         A_k = A(x_warm_start_k, u_warm_start_k, params_k)
                         B_k = B(x_warm_start_k, u_warm_start_k,params_k)  
                         K_k = self.compute_riccatti_gains(A_k, B_k)
-                        Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k) 
+                        Sigma_next = self.propagate_covariance(A_k, B_k, K_k, Sigma_k)
+                        # save LQR gains
+                        K_total[time_idx, :, :] = K_k 
                     
                     # get the generalized position vector at the jth SQP iteration
                     base_posj_k = np.array(x_warm_start_k[9:12])
@@ -764,8 +768,8 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                             )
                         break
                 x_warm_start_N = X_sim
-                u_warm_start_N = U_sim 
-        return X_sim, U_sim    
+                u_warm_start_N = U_sim         
+        return X_sim, U_sim, K_total    
  
     def compute_riccatti_gains(self, A, B):
         Q, R  = self.Q, self.R
