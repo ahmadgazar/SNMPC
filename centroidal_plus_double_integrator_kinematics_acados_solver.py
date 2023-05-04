@@ -106,11 +106,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # cost type
         cost.cost_type = 'LINEAR_LS'
         cost.cost_type_e = 'LINEAR_LS'
-        # Nonlinear cost expressions
-        # ee_fk_pos = self.model.casadi_model.fk_q_bar_pos
-        # ee_frame_vel = self.model.casadi_model.ee_frame_vel
-        # self.ocp.model.cost_y_expr = vertcat(x, u, ee_frame_vel)
-        # self.ocp.model.cost_y_expr_e = x
         # initial state tracking reference
         cost.yref = np.zeros(nx+nu)
         cost.yref_e = np.zeros(nx)
@@ -130,11 +125,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         if not self.RECEEDING_HORIZON:
             # initial constraints
             ocp.constraints.x0 = x0 
-            # terminal constraints
-            # x_goal = self.x_init[-1]
-            # self.ocp.constraints.idxbx_e = np.array(range(self.nx))
-            # self.ocp.constraints.lbx_e = x_goal 
-            # self.ocp.constraints.ubx_e = x_goal        
         if self.model._robot_type == 'QUADRUPED':
             # number of contact location constraints
             ng = 12
@@ -160,10 +150,10 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # slack penalties
         L2_pen = self.L2_pen
         L1_pen = self.L1_pen 
-        ocp.cost.Zl = L2_pen #* np.ones(nh+ng)
-        ocp.cost.Zu = L2_pen #* np.ones(nh+ng)
-        ocp.cost.zl = L1_pen #* np.ones(nh+ng)
-        ocp.cost.zu = L1_pen #* np.ones(nh+ng)
+        ocp.cost.Zl = L2_pen
+        ocp.cost.Zu = L2_pen 
+        ocp.cost.zl = L1_pen 
+        ocp.cost.zu = L1_pen 
 
     def __fill_ocp_solver_settings(self):
         if self.RECEEDING_HORIZON:
@@ -180,7 +170,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # self.ocp.solver_options.sim_method_newton_iter = 1
         self.ocp.solver_options.print_level = 0
         self.ocp.solver_options.qp_solver_cond_N = N
-        # self.ocp.solver_options.qp_solver_iter_max = 15
+        self.ocp.solver_options.qp_solver_iter_max = 15
         # ocp.solver_options.sim_method_newton_iter = 10
         ## ---------------------
         ##  NLP solver settings
