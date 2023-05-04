@@ -188,10 +188,12 @@ class WholeBodyModel:
         # Defining the action models along the time instances
         loco3dModel = []
         for i, gait in enumerate(self.gait_templates):
-            if self.gait['terrain'] == 'HIKE' and i%2 ==0:
+            if self.gait['terrain'] == 'CLIMB' or (self.gait['terrain'] == 'HIKE' and i%2 ==0):
                HIKE_DIRECTION = 'UP'
             elif self.gait['terrain'] == 'DOWN' or (self.gait['terrain'] == 'HIKE' and i%2 !=0):
                HIKE_DIRECTION = 'DOWN'   
+            else:
+                HIKE_DIRECTION = 'FLAT'
             for phase in gait:
                 if phase == 'doubleSupport':
                     loco3dModel += self.createDoubleSupportFootstepModels(
@@ -276,17 +278,30 @@ class WholeBodyModel:
         self.time_idx = 0
         # Defining the action models along the time instances
         loco3dModel = []
-        for gait in self.gait_templates:
+        for i, gait in enumerate(self.gait_templates):
+            if self.gait['terrain'] == 'CLIMB' or (self.gait['terrain'] == 'HIKE' and i%2 ==0): 
+                HIKE_DIRECTION = 'UP'
+            elif self.gait['terrain'] == 'DOWN' or (self.gait['terrain'] == 'HIKE' and i%2 !=0):
+                HIKE_DIRECTION = 'DOWN'
+            else:
+                HIKE_DIRECTION = 'FLAT'        
             for phase in gait:
                 if phase == 'doubleSupport':
-                    loco3dModel += self.createDoubleSupportFootstepModels([lfFootPos0, rfFootPos0, 
-                                                                          lhFootPos0, rhFootPos0])
+                    loco3dModel += self.createDoubleSupportFootstepModels(
+                        [lfFootPos0, rfFootPos0,lhFootPos0, rhFootPos0]
+                        )
                 elif phase == 'rflfStep':
-                    loco3dModel += self.createSingleSupportFootstepModels([rfFootPos0, lfFootPos0], 
-                                    [self.rhFootId, self.lhFootId], [self.rfFootId, self.lfFootId])              
+                    loco3dModel += self.createSingleSupportFootstepModels(
+                        [rfFootPos0, lfFootPos0], [self.rhFootId, self.lhFootId], 
+                        [self.rfFootId, self.lfFootId],
+                        HIKE_DIRECTION
+                        )              
                 elif phase == 'rhlhStep':
-                    loco3dModel += self.createSingleSupportFootstepModels([rhFootPos0, lhFootPos0], 
-                                    [self.rfFootId, self.lfFootId], [self.rhFootId, self.lhFootId])
+                    loco3dModel += self.createSingleSupportFootstepModels(
+                        [rhFootPos0, lhFootPos0], [self.rfFootId, self.lfFootId], 
+                        [self.rhFootId, self.lhFootId],
+                        HIKE_DIRECTION
+                        )
         self.running_models = loco3dModel
 
     def create_jump_models(self):
@@ -304,7 +319,13 @@ class WholeBodyModel:
         self.time_idx = 0
         # Defining the action models along the time instances
         loco3dModel = []
-        for gait in self.gait_templates:
+        for i, gait in enumerate(self.gait_templates):
+            if self.gait['terrain'] == 'CLIMB' or (self.gait['terrain'] == 'HIKE' and i%2 ==0): 
+                HIKE_DIRECTION = 'UP'
+            elif self.gait['terrain'] == 'DOWN' or (self.gait['terrain'] == 'HIKE' and i%2 !=0):
+                HIKE_DIRECTION = 'DOWN'
+            else:
+                HIKE_DIRECTION = 'FLAT'       
             for phase in gait:
                 if phase == 'doubleSupport':
                     loco3dModel += self.createDoubleSupportFootstepModels(
@@ -312,9 +333,10 @@ class WholeBodyModel:
                         )
                 elif phase == 'NONE':
                     loco3dModel += self.createSingleSupportFootstepModels(
-                        [rfFootPos0, lfFootPos0, rhFootPos0, lhFootPos0], 
+                        [lfFootPos0, rfFootPos0, lhFootPos0, rhFootPos0], 
                         [], 
-                        [self.rfFootId, self.lfFootId, self.rhFootId, self.lhFootId]
+                        [self.lfFootId, self.rfFootId, self.lhFootId, self.rhFootId],
+                        HIKE_DIRECTION
                         )              
         self.running_models = loco3dModel
 
@@ -337,72 +359,97 @@ class WholeBodyModel:
         numLegs = len(supportFootIds) + len(swingFootIds)
         comPercentage = float(len(swingFootIds)) / numLegs
         stepLength, stepHeight = self.gait['stepLength'], self.gait['stepHeight']
-        numKnots = self.gait['stepKnots'] 
+        StepWidth, numKnots = self.gait['stepWidth'], self.gait['stepKnots']
+        if self.gait['type'] == 'JUMP':
+            jumpHeight = self.gait['jumpHeight']
+            df = jumpHeight - feetPos0[0][2]
+        else:
+            jumpHeight = 0.     
         # Action models for the foot swing
         footSwingModel = []
         for k in range(numKnots):
             swingFootTask = []
+            # swing feet tasks 
             for i, p in zip(swingFootIds, feetPos0):
-                # Defining a foot swing task given the step length
-                # resKnot = numKnots % 2
+                # define swing foot task based on the direction of the stepping
                 if HIKE_DIRECTION == 'UP':
                     phKnots = numKnots - 5
                     if k < phKnots:
-                        dp = np.array([stepLength*(k+1)/numKnots, 0., 1.75*stepHeight*k / phKnots])
+                        dp = np.array(
+                            [stepLength*(k+1)/numKnots, 0., 1.8*stepHeight*k/phKnots]
+                            )
                     elif k == phKnots:
-                        dp = np.array([stepLength*(k+1)/numKnots, 0., 1.75*stepHeight])
+                        dp = np.array(
+                            [stepLength*(k+1)/numKnots, 0., 1.8*stepHeight]
+                            )
                     else:
                         dp = np.array(
-                            [stepLength*(k+1)/numKnots, 0., 1.75*stepHeight*(1-float(k-phKnots) / phKnots)])
+                            [stepLength*(k+1)/numKnots, 0., 1.8*stepHeight*(1-float(k-phKnots)/phKnots)]
+                            )
                    
                 elif HIKE_DIRECTION == 'FLAT':
-                    phKnots = numKnots / 2
+                    phKnots = numKnots/2
                     if k < phKnots:
-                        dp = np.array([stepLength*(k+1)/numKnots, 0., stepHeight*k / phKnots])
+                        dp = np.array(
+                            [stepLength*(k+1)/numKnots, 0., stepHeight*k / phKnots]
+                            )
                     elif k == phKnots:
-                        dp = np.array([stepLength*(k+1)/numKnots, 0., stepHeight])
+                        dp = np.array(
+                            [stepLength*(k+1)/numKnots, 0., stepHeight]
+                            )
                     else:
                         dp = np.array(
-                            [stepLength * (k+1) / numKnots, 0., stepHeight * (1 - float(k - phKnots) / phKnots)])
-                # cyclic up and down stepping stones
+                            [stepLength*(k+1)/numKnots, 0., stepHeight*(1-float(k-phKnots)/phKnots)]
+                            )
                 elif HIKE_DIRECTION == 'DOWN':
                     phKnots = numKnots - 10
                     if k < phKnots:
-                        dp = np.array([stepLength*(k+1)/numKnots, 0., 0.5*stepHeight*k / phKnots])
+                        dp = np.array(
+                            [stepLength*(k+1)/numKnots, StepWidth*(k+1)/numKnots, 0.5*stepHeight*k / phKnots]
+                            )
                     elif k == phKnots:
-                        dp = np.array([stepLength*(k+1)/numKnots, 0., 0.5*stepHeight])
+                        dp = np.array(
+                            [stepLength*(k+1)/numKnots, StepWidth*(k+1)/numKnots, 0.5*stepHeight]
+                            )
                     else:
                         dp = np.array(
-                            [stepLength*(k+1)/numKnots, 0., 0.5*stepHeight*(1-float(k-phKnots) / phKnots)])
+                            [stepLength*(k+1)/numKnots, StepWidth*(k+1)/numKnots, 0.5*stepHeight*(1-float(k-phKnots) / phKnots)]
+                            )
                 tref = p + dp
                 swingFootTask += [[i, pinocchio.SE3(np.eye(3), tref)]]  
-            # postImpact = False 
             if k == numKnots-1:
                 self.postImpact = swingFootTask
             else:
                 self.postImpact = None
+            # CoM task 
             if HIKE_DIRECTION == 'UP': 
-                comTask = np.array([stepLength*(k+1)/numKnots, 0., stepHeight*(k+1)/numKnots])*comPercentage + self.comRef
-            elif HIKE_DIRECTION == 'FLAT':
-                comTask = np.array([stepLength*(k+1)/numKnots, 0., 0.])*comPercentage + self.comRef
+                comTask = np.array(
+                    [stepLength*(k+1)/numKnots, 0., stepHeight*(k+1)/numKnots]
+                    )*comPercentage + self.comRef
+            elif HIKE_DIRECTION == 'FLAT':    
+                comTask = np.array(
+                    [stepLength*(k+1)/numKnots, 0., 0.]
+                    )*comPercentage + self.comRef
             elif HIKE_DIRECTION == 'DOWN':
-                comTask = np.array([stepLength*(k+1)/numKnots, 0., -stepHeight*(k+1)/numKnots])*comPercentage + self.comRef
+                comTask = np.array(
+                    [stepLength*(k+1)/numKnots, StepWidth*(k+1)/numKnots, -stepHeight*(k+1)/numKnots]
+                    )*comPercentage + self.comRef
             footSwingModel += [
                 self.createSwingFootModel(supportFootIds, comTask=comTask, swingFootTask=swingFootTask)
                     ]
-        # Updating the current foot position for next step
+        # Updating the feet positions and CoM for next step
         if HIKE_DIRECTION == 'UP':
             self.comRef += [stepLength*comPercentage, 0., 0.5*stepHeight]
             for p in feetPos0:
                 p += [stepLength, 0., stepHeight] 
         elif HIKE_DIRECTION == 'FLAT':
-            self.comRef += [stepLength * comPercentage, 0., 0.]
+            self.comRef += [stepLength*comPercentage, 0., 0.]
             for p in feetPos0:
                 p += [stepLength, 0., 0.]
         elif HIKE_DIRECTION == 'DOWN':
-            self.comRef += [stepLength*comPercentage, 0., -0.5*stepHeight]
+            self.comRef += [stepLength*comPercentage, StepWidth*comPercentage, -0.5*stepHeight]
             for p in feetPos0:
-                p += [stepLength, 0., -stepHeight]                
+                p += [stepLength, StepWidth, -stepHeight]                
         return footSwingModel 
 
     def createSwingFootModel(self, supportFootIds, comTask=None, swingFootTask=None):

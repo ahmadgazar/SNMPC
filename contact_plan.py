@@ -310,7 +310,12 @@ def create_climbing_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0
                   else:
                         gait_templates += [['doubleSupport', 
                                             'rflfStep', 'doubleSupport', 
-                                            'rhlhStep', 'doubleSupport']]              
+                                            'rhlhStep', 'doubleSupport']] 
+      elif gait['type'] == 'JUMP':
+        for step in range (steps):
+            gait_templates += [
+              ['doubleSupport', 'NONE', 'doubleSupport']
+              ]                                                 
       pin.forwardKinematics(rmodel, rdata, q0)
       pin.updateFramePlacements(rmodel, rdata)
       if rmodel.type == 'QUADRUPED':
@@ -483,7 +488,12 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                   else:
                         gait_templates += [['doubleSupport', 
                                             'rflfStep', 'doubleSupport', 
-                                            'rhlhStep', 'doubleSupport']]              
+                                            'rhlhStep', 'doubleSupport']]
+      elif gait['type'] == 'JUMP':
+        for step in range (steps):
+            gait_templates += [
+              ['doubleSupport', 'NONE', 'doubleSupport']
+              ]                                                  
       pin.forwardKinematics(rmodel, rdata, q0)
       pin.updateFramePlacements(rmodel, rdata)
       if rmodel.type == 'QUADRUPED':
@@ -494,8 +504,7 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
       t_start = 0.0 
       contact_sequence = []
       stepKnots, supportKnots = gait['stepKnots'], gait['supportKnots']
-      stepLength = gait['stepLength']
-      stepHeight = gait['stepHeight']
+      stepLength, stepWidth, stepHeight = gait['stepLength'], gait['stepWidth'], gait['stepHeight']
       for i, gait in enumerate(gait_templates):
             for phase in gait:
                   contact_sequence_k = []
@@ -527,6 +536,8 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                       frFootPos[2] += stepHeight
                       hlFootPos[2] += stepHeight
                     else:
+                      frFootPos[1] += stepWidth
+                      hlFootPos[1] += stepWidth  
                       frFootPos[2] -= stepHeight
                       hlFootPos[2] -= stepHeight  
                     frFootPos[0] += stepLength
@@ -550,6 +561,8 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                       flFootPos[2] += stepHeight
                       hrFootPos[2] += stepHeight
                     else:
+                      flFootPos[1] += stepWidth
+                      hrFootPos[1] += stepWidth  
                       flFootPos[2] -= stepHeight
                       hrFootPos[2] -= stepHeight  
                     flFootPos[0] += stepLength
@@ -559,6 +572,10 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],  
                                           y=frFootPos[1], z=frFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
                     contact_sequence_k.append(Debris(CONTACT='FL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    if i%2 == 0:
+                      flFootPos[2] += stepHeight
+                    else:
+                      flFootPos[2] -= stepHeight
                     flFootPos[0] += stepLength
                     flFootPos[2] += stepHeight
                   elif phase == 'rfrhStep':
@@ -569,10 +586,16 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                     contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, ACTIVE=False))
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, x=hlFootPos[0],  
                                          y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    if i%2 == 0:
+                      frFootPos[2] += stepHeight
+                      hrFootPos[2] += stepHeight
+                    else:
+                      frFootPos[1] += stepWidth
+                      hrFootPos[1] += stepWidth  
+                      frFootPos[2] -= stepHeight
+                      hrFootPos[2] -= stepHeight  
                     frFootPos[0] += stepLength
-                    hrFootPos[0] += stepLength
-                    frFootPos[2] += stepHeight
-                    hrFootPos[2] += stepHeight        
+                    hrFootPos[0] += stepLength    
                   elif phase == 'lflhStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],  
@@ -581,10 +604,16 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                     contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, x=hrFootPos[0], 
                                           y=hrFootPos[1], z=hrFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    if i%2 == 0:
+                      flFootPos[2] += stepHeight
+                      hlFootPos[2] += stepHeight
+                    else:
+                      flFootPos[1] += stepWidth
+                      hlFootPos[1] += stepWidth  
+                      flFootPos[2] -= stepHeight
+                      hlFootPos[2] -= stepHeight  
                     flFootPos[0] += stepLength
                     hlFootPos[0] += stepLength
-                    flFootPos[2] += stepHeight
-                    hlFootPos[2] += stepHeight
                   elif phase == 'rflfStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
@@ -593,10 +622,16 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                                           y=hrFootPos[1], z=hrFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, x=hlFootPos[0],  
                                           y=hlFootPos[1], z=hlFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))
+                    if i%2 == 0:
+                      frFootPos[2] += stepHeight
+                      flFootPos[2] += stepHeight
+                    else:
+                      frFootPos[1] += stepWidth
+                      flFootPos[1] += stepWidth  
+                      frFootPos[2] -= stepHeight
+                      flFootPos[2] -= stepHeight  
                     frFootPos[0] += stepLength
                     flFootPos[0] += stepLength
-                    frFootPos[2] += stepHeight
-                    flFootPos[2] += stepHeight      
                   elif phase == 'rhlhStep':
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, x=frFootPos[0],  
@@ -605,10 +640,16 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                                           y=flFootPos[1], z=flFootPos[2], axis=[-1, 0], angle=0.0, ACTIVE=True))                        
                     contact_sequence_k.append(Debris(CONTACT='HR', t_start=t_start, t_end=t_end, ACTIVE=False))
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
+                    if i%2 == 0:
+                      hrFootPos[2] += stepHeight
+                      hlFootPos[2] += stepHeight
+                    else:
+                      hrFootPos[1] += stepWidth
+                      hlFootPos[1] += stepWidth  
+                      hrFootPos[2] -= stepHeight
+                      hlFootPos[2] -= stepHeight  
                     hrFootPos[0] += stepLength
                     hlFootPos[0] += stepLength
-                    hrFootPos[2] += stepHeight
-                    hlFootPos[2] += stepHeight
                   else:
                     t_end = t_start + stepKnots*dt
                     contact_sequence_k.append(Debris(CONTACT='FR', t_start=t_start, t_end=t_end, ACTIVE=False))
@@ -617,13 +658,29 @@ def create_hiking_contact_sequence(dt, gait, ee_frame_names, rmodel, rdata, q0):
                     contact_sequence_k.append(Debris(CONTACT='HL', t_start=t_start, t_end=t_end, ACTIVE=False))
                     frFootPos[0] += stepLength
                     flFootPos[0] += stepLength
-                    frFootPos[2] += stepHeight
-                    flFootPos[2] += stepHeight
+                    if i%2 == 0:
+                      # frFootPos[1] += stepWidth
+                      # flFootPos[1] += stepWidth
+                      frFootPos[2] += stepHeight
+                      flFootPos[2] += stepHeight
+                    else:
+                      frFootPos[1] += stepWidth
+                      flFootPos[1] += stepWidth
+                      frFootPos[2] -= stepHeight
+                      flFootPos[2] -= stepHeight   
                     if rmodel.type == 'QUADRUPED':
                         hrFootPos[0] += stepLength      
                         hlFootPos[0] += stepLength
-                        hrFootPos[2] += stepHeight      
-                        hlFootPos[2] += stepHeight  
+                        if i%2 == 0:
+                          # hrFootPos[1] += stepWidth      
+                          # hlFootPos[1] += stepWidth
+                          hrFootPos[2] += stepHeight      
+                          hlFootPos[2] += stepHeight
+                        else:
+                          hrFootPos[1] += stepWidth      
+                          hlFootPos[1] += stepWidth
+                          hrFootPos[2] -= stepHeight      
+                          hlFootPos[2] -= stepHeight     
                   t_start = t_end
                   contact_sequence += [contact_sequence_k] 
       return gait_templates, contact_sequence
