@@ -4,17 +4,22 @@ import example_robot_data
 from contact_plan import create_contact_sequence
 from casadi_kin_dyn import pycasadi_kin_dyn as cas_kin_dyn
 from robot_properties_solo.solo12wrapper import Solo12Config
+from contact_plan import create_contact_sequence, create_climbing_contact_sequence, create_hiking_contact_sequence
+
 
 # walking parameters:
 # -------------------
 dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'JUMP',
-      'stepLength' : 0.,
-      'stepHeight' : 0.1,
-      'stepKnots' : 10,
-      'supportKnots' : 5,
-      'nbSteps': 4}
+       'terrain': 'FLAT',
+       'stepLength' : 0.1,
+       'stepWidth': 0., 
+       'stepHeight' : 0.05,
+       'jumpHeight': 0.1,
+       'stepKnots' : 10,
+       'supportKnots' : 15,
+       'nbSteps': 4}
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
@@ -49,9 +54,18 @@ q0[0] = 0.0
 urdf = open('solo12.urdf', 'r').read()
 kindyn = cas_kin_dyn.CasadiKinDyn(urdf)
 joint_names = kindyn.joint_names()
-gait_templates, contact_sequence = create_contact_sequence(
-      dt, gait, ee_frame_names, rmodel, rdata, q0
-      )
+if gait['terrain'] == 'FLAT':
+      gait_templates, contact_sequence = create_contact_sequence(
+            dt, gait, ee_frame_names, rmodel, rdata, q0
+            )
+elif gait['terrain'] == 'CLIMB':
+      gait_templates, contact_sequence = create_climbing_contact_sequence(
+            dt, gait, ee_frame_names, rmodel, rdata, q0
+            )
+elif gait['terrain'] == 'HIKE':
+      gait_templates, contact_sequence = create_hiking_contact_sequence(
+            dt, gait, ee_frame_names, rmodel, rdata, q0
+            )     
 # planning and control horizon lengths:   
 # -------------------------------------
 N = int(round(contact_sequence[-1][0].t_end/dt, 2))
@@ -77,12 +91,12 @@ beta_u = 0.01 # probability of constraint violation
 
 # centroidal cost objective weights MPC:
 # -------------------------------------
-state_cost_weights = 2*np.diag([1e4, 1e4, 1e4,    #com
-                                1e3, 1e3, 1e3,    #linear_momentum 
-                                1e3, 1e3, 1e3,    #angular_momentum 
+state_cost_weights = 2*np.diag([1e3, 1e3, 1e3,    #com
+                                1e4, 1e4, 1e4,    #linear_momentum 
+                                1e4, 1e4, 1e4,    #angular_momentum 
                               
-                               1e3, 1e3, 1e3,     #base position 
-                               1e5, 1e5, 1e5,     #drelative base position
+                               5e2, 5e2, 5e2,     #base position 
+                               1e2, 1e2, 1e2,     #drelative base position
                               
                                1e3, 1e3, 1e3,     #q_FL 
                                1e3, 1e3, 1e3,     #q_FR
@@ -99,18 +113,18 @@ state_cost_weights = 2*np.diag([1e4, 1e4, 1e4,    #com
 
                               ])     
 
-control_cost_weights = 2*np.diag([5e1, 1e1, 1e0,   #FL_forces
-                                  5e1, 1e1, 1e0,   #FR_forces
-                                  5e1, 1e1, 1e0,   #HL_forces
-                                  5e1, 1e1, 1e0,   #HR_forces
+control_cost_weights = 2*np.diag([5e-1, 5e-1, 5e-1,   #FL_forces
+                                  5e-1, 5e-1, 5e-1,   #FR_forces
+                                  5e-1, 5e-1, 5e-1,   #HL_forces
+                                  5e-1, 5e-1, 5e-1,   #HR_forces
                   
-                                1e1, 1e1, 1e1,      #base linear acceleration
-                                1e2, 1e2, 1e2,      #base angular acceleration
+                                1e0, 1e0, 1e0,      #base linear acceleration
+                                1e0, 1e0, 1e0,      #base angular acceleration
                                 
-                                5e-3, 5e-3, 5e-3,   #qddot_FL
-                                5e-3, 5e-3, 5e-3,   #qddot_FR
-                                5e-3, 5e-3, 5e-3,   #qddot_HL
-                                5e-3, 5e-3, 5e-3    #qddot_HR
+                                1e-3, 1e-3, 1e-3,   #qddot_FL
+                                1e-3, 1e-3, 1e-3,   #qddot_FR
+                                1e-3, 1e-3, 1e-3,   #qddot_HL
+                                1e-3, 1e-3, 1e-3    #qddot_HR
                                 ])
 
 swing_foot_cost_weights = 2*np.diag([1e2, 1e2, 1e2, #FL 
@@ -121,15 +135,15 @@ swing_foot_cost_weights = 2*np.diag([1e2, 1e2, 1e2, #FL
 # --------------------------- 
 
 # slack penalties on linear constraints
-L2_pen_g = np.array([0e3, 0e3, 0e0,
-                     0e3, 0e3, 0e0,
-                     0e3, 0e3, 0e0,
-                     0e3, 0e3, 0e0])
+L2_pen_g = np.array([0e6, 0e6, 1e3,
+                     0e6, 0e6, 1e3,
+                     0e6, 0e6, 1e3,
+                     0e6, 0e6, 1e3])
 
-L1_pen_g = np.array([1e3, 1e3, 1e5,
-                     1e3, 1e3, 1e5,
-                     1e3, 1e3, 1e5,
-                     1e3, 1e3, 1e5])                                                                                              
+L1_pen_g = np.array([1e4, 1e4, 5e6,
+                     1e4, 1e4, 5e6,
+                     1e4, 1e4, 5e6,
+                     1e4, 1e4, 5e6])                                                                                              
 
 # slack penalties on nonlinear constraints
 L2_contact_location_lateral = 8*[1e0]
@@ -139,7 +153,7 @@ L2_friction_cone = 4*[0e-1]
 L2_pen_frame_vel = 12*[0e0]
 L2_pen_lin_mom = 3*[1e1]
 L2_pen_ang_mom = 3*[1e1]
-L2_pen_com = 3*[5e1]
+L2_pen_com = 3*[5e0]
 L2_pen_h = np.array(
       L2_friction_cone +
       # L2_friction_pyramid +
@@ -153,8 +167,8 @@ L2_pen_h = np.array(
 L1_contact_location_lateral = 8*[0e0]
 L1_contact_location_vertical = 4*[0e0]
 L1_friction_pyramid = 16*[1e2]
-L1_friction_cone = 4*[1e3]
-L1_pen_frame_vel = 12*[1e5]
+L1_friction_cone = 4*[1e2]
+L1_pen_frame_vel = 12*[1e3]
 L1_pen_lin_mom = 3*[0e0]
 L1_pen_ang_mom = 3*[0e0]
 L1_pen_com = 3*[0e0]

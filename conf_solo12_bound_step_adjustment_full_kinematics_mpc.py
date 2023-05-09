@@ -1,20 +1,22 @@
 import numpy as np
 import pinocchio as pin 
 import example_robot_data 
-from contact_plan import create_contact_sequence
 from casadi_kin_dyn import pycasadi_kin_dyn as cas_kin_dyn
 from robot_properties_solo.solo12wrapper import Solo12Config
+from contact_plan import create_contact_sequence, create_climbing_contact_sequence, create_hiking_contact_sequence
 
 # walking parameters:
 # -------------------
 dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'BOUND',
-      'stepLength' : 0.,
-      'stepHeight' : 0.1,
-      'stepKnots' : 9,
-      'supportKnots' : 10,
-      'nbSteps': 4}
+       'terrain': 'HIKE',
+      'stepLength' : 0.12,  
+      'stepWidth' : 0.1,
+      'stepHeight' : 0.05,
+      'stepKnots' : 15,
+      'supportKnots' : 12, 
+      'nbSteps': 3}
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
@@ -49,13 +51,22 @@ q0[0] = 0.0
 urdf = open('solo12.urdf', 'r').read()
 kindyn = cas_kin_dyn.CasadiKinDyn(urdf)
 joint_names = kindyn.joint_names()
-gait_templates, contact_sequence = create_contact_sequence(
-      dt, gait, ee_frame_names, rmodel, rdata, q0
-      )
+if gait['terrain'] == 'FLAT':
+      gait_templates, contact_sequence = create_contact_sequence(
+            dt, gait, ee_frame_names, rmodel, rdata, q0
+            )
+elif gait['terrain'] == 'CLIMB':
+      gait_templates, contact_sequence = create_climbing_contact_sequence(
+            dt, gait, ee_frame_names, rmodel, rdata, q0
+            )
+elif gait['terrain'] == 'HIKE':
+      gait_templates, contact_sequence = create_hiking_contact_sequence(
+            dt, gait, ee_frame_names, rmodel, rdata, q0
+            )      
 # planning and control horizon lengths:   
 # -------------------------------------
 N = int(round(contact_sequence[-1][0].t_end/dt, 2))
-N_mpc = (gait['stepKnots'] + (gait['supportKnots']))*3
+N_mpc = (gait['stepKnots']*3 + (gait['supportKnots']))
 N_mpc_wbd = int(round(N_mpc/2, 2))
 N_ctrl = int((N-1)*(dt/dt_ctrl))    
 # LQR gains (for stochastic control)      
@@ -78,24 +89,24 @@ beta_u = 0.01 # probability of constraint violation
 # centroidal cost objective weights MPC:
 # -------------------------------------
 state_cost_weights = 2*np.diag([1e3, 1e3, 1e3,    #com
-                                1e4, 1e4, 1e4,    #linear_momentum 
+                                1e2, 1e2, 1e2,    #linear_momentum 
                                 1e4, 1e4, 1e4,    #angular_momentum 
                               
                                1e3, 1e3, 1e3,     #base position 
-                               1e6, 1e6, 1e6,     #drelative base position
+                               5e1, 5e1, 5e1,     #drelative base position
                               
-                               5e2, 5e2, 5e2,     #q_FL 
-                               5e2, 5e2, 5e2,     #q_FR
-                               5e2, 5e2, 5e2,     #q_HL
-                               5e2, 5e2, 5e2,     #q_HR
+                               1e3, 1e3, 1e3,     #q_FL 
+                               1e3, 1e3, 1e3,     #q_FR
+                               1e3, 1e3, 1e3,     #q_HL
+                               1e3, 1e3, 1e3,     #q_HR
 
-                               5e2, 5e2, 5e2,     #base linear velocity 
+                               1e2, 1e2, 1e2,     #base linear velocity 
                                1e2, 1e2, 1e2,     #base angular velocity
                               
-                               1e2, 1e2, 1e2,     #qdot_FL 
-                               1e2, 1e2, 1e2,     #qdot_FR
-                               1e2, 1e2, 1e2,     #qdot_HL
-                               1e2, 1e2, 1e2,     #qdot_HR
+                               2e2, 2e2, 2e2,     #qdot_FL 
+                               2e2, 2e2, 2e2,     #qdot_FR
+                               2e2, 2e2, 2e2,     #qdot_HL
+                               2e2, 2e2, 2e2,     #qdot_HR
 
                               ])     
 
@@ -126,14 +137,14 @@ L2_pen_g = np.array([0e3, 0e3, 0e0,
                      0e3, 0e3, 0e0,
                      0e3, 0e3, 0e0])
 
-L1_pen_g = np.array([1e5, 1e5, 1e5,
-                     1e5, 1e5, 1e5,
-                     1e5, 1e5, 1e5,
-                     1e5, 1e5, 1e5])                                                                                              
+L1_pen_g = np.array([1e4, 1e4, 1e4,
+                     1e4, 1e4, 1e4,
+                     1e4, 1e4, 1e4,
+                     1e4, 1e4, 1e4])                                                                                              
 
 # slack penalties on nonlinear constraints
-L2_contact_location_lateral = 8*[1e0]
-L2_contact_location_vertical = 4*[1e0]
+L2_contact_location_lateral = 8*[0e0]
+L2_contact_location_vertical = 4*[0e0]
 L2_friction_pyramid = 16*[0e-2]
 L2_friction_cone = 4*[0e-1]
 L2_pen_frame_vel = 12*[0e0]
@@ -150,11 +161,11 @@ L2_pen_h = np.array(
       L2_pen_ang_mom +
       L2_pen_com
       )
-L1_contact_location_lateral = 8*[0e0]
-L1_contact_location_vertical = 4*[0e0]
+L1_contact_location_lateral = 8*[1e1]
+L1_contact_location_vertical = 4*[1e1]
 L1_friction_pyramid = 16*[1e2]
-L1_friction_cone = 4*[1e4]
-L1_pen_frame_vel = 12*[1e5]
+L1_friction_cone = 4*[1e3]
+L1_pen_frame_vel = 12*[1e4]
 L1_pen_lin_mom = 3*[0e0]
 L1_pen_ang_mom = 3*[0e0]
 L1_pen_com = 3*[0e0]

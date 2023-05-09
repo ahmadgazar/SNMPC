@@ -12,11 +12,12 @@ dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'TROT',
        'terrain': 'HIKE',
-       'stepLength' : 0.15, 
-       'stepHeight' : 0.05,
+       'stepLength' : 0.1,
+       'stepWidth' : 0.1,
+       'stepHeight' : 0.06,
        'stepKnots' : 15,
-       'supportKnots' : 10,
-       'nbSteps': 2}
+       'supportKnots' : 5,
+       'nbSteps': 3}
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
@@ -66,7 +67,7 @@ elif gait['terrain'] == 'HIKE':
 # planning and control horizon lengths:   
 # -------------------------------------
 N = int(round(contact_sequence[-1][0].t_end/dt, 2))
-N_mpc = (gait['stepKnots'] + (gait['supportKnots']))*3
+N_mpc = (gait['stepKnots'] + (gait['supportKnots']))*2
 N_mpc_wbd = int(round(N_mpc/2, 2))
 N_ctrl = int((N-1)*(dt/dt_ctrl))    
 # LQR gains (for stochastic control)      
@@ -78,12 +79,29 @@ R = 1e-1*np.eye(30)
 # -----------------
 n_w = nb_contacts*3  # no. of contact position parameters
 # uncertainty parameters 
-cov_w_dt = (0.3**2)*dt*np.eye(45)
+cov_w_dt = dt*np.diag(
+      [
+            0e-1, 0e-1, 0e-1, #com
+            0e-1, 0e-1, 0e-1, #linear_momentum 
+            0e-1, 0e-1, 0e-1, #angular_momentum 
 
-# discrete addtive noise
-cov_white_noise = dt*np.diag(np.array([0.85**2, 0.4**2, 0.01**2,
-                                       0.75**2, 0.4**2, 0.01**2,
-                                       0.85**2, 0.4**2, 0.01**2]))
+            0.3**2, 0.3**2, 0.3**2,    #base position 
+            0.05**2, 0.05**2, 0.05**2, #drelative base orientation
+
+            0.5**2, 0.5**2, 0.5**2, #q_FL 
+            0.5**2, 0.5**2, 0.5**2, #q_FR
+            0.5**2, 0.5**2, 0.5**2, #q_HL
+            0.5**2, 0.5**2, 0.5**2, #q_HR
+
+            0.2**2, 0.2**2, 0.2**2, #base linear velocity 
+            0.    ,     0.,     0., #base angular velocity
+
+            0.1**2, 0.1**2, 0.1**2, #qdot_FL 
+            0.1**2, 0.1**2, 0.1**2, #qdot_FR
+            0.1**2, 0.1**2, 0.1**2, #qdot_HL
+            0.1**2, 0.1**2, 0.1**2, #qdot_HR
+      ]
+)     
 beta_u = 0.01 # probability of constraint violation 
 
 # centroidal cost objective weights MPC:
@@ -93,20 +111,20 @@ state_cost_weights = 2*np.diag([1e3, 1e3, 1e3,    #com
                                 1e3, 1e3, 1e3,    #angular_momentum 
                               
                                1e1, 1e1, 1e1,     #base position 
-                               5e2, 5e2, 5e2,     #drelative base position
+                               1e3, 1e3, 1e3,     #drelative base position
                               
-                               2e2, 2e2, 2e2,     #q_FL 
-                               2e2, 2e2, 2e2,     #q_FR
-                               2e2, 2e2, 2e2,     #q_HL
-                               2e2, 2e2, 2e2,     #q_HR
+                               5e2, 5e2, 5e2,     #q_FL 
+                               5e2, 5e2, 5e2,     #q_FR
+                               5e2, 5e2, 5e2,     #q_HL
+                               5e2, 5e2, 5e2,     #q_HR
 
                                5e0, 5e0, 5e0,     #base linear velocity 
                                1e2, 1e2, 1e2,     #base angular velocity
-                              
-                               1e1, 1e1, 1e1,     #qdot_FL 
-                               1e1, 1e1, 1e1,     #qdot_FR
-                               1e1, 1e1, 1e1,     #qdot_HL
-                               1e1, 1e1, 1e1,     #qdot_HR
+                        
+                               5e1, 5e1, 5e1,     #qdot_FL 
+                               5e1, 5e1, 5e1,     #qdot_FR
+                               5e1, 5e1, 5e1,     #qdot_HL
+                               5e1, 5e1, 5e1,     #qdot_HR
 
                               ])     
 
@@ -132,10 +150,10 @@ swing_foot_cost_weights = 2*np.diag([1e2, 1e2, 1e2, #FL
 # --------------------------- 
 
 # slack penalties on linear constraints
-L2_pen_g = np.array([1e0, 1e0, 1e0,
-                     1e0, 1e0, 1e0,
-                     1e0, 1e0, 1e0,
-                     1e0, 1e0, 1e0])
+L2_pen_g = np.array([5e1, 5e1, 5e1,
+                     5e1, 5e1, 5e1,
+                     5e1, 5e1, 5e1,
+                     5e1, 5e1, 5e1])
 
 L1_pen_g = np.array([1e3, 1e3, 1e3,
                      1e3, 1e3, 1e3,
@@ -143,7 +161,7 @@ L1_pen_g = np.array([1e3, 1e3, 1e3,
                      1e3, 1e3, 1e3])                                                                                             
 
 # slack penalties on nonlinear constraints
-L2_contact_location_lateral = 8*[1e0]
+L2_contact_location_lateral = 8*[5e0]
 L2_contact_location_vertical = 4*[1e0]
 L2_friction_pyramid = 16*[0e-2]
 L2_friction_cone = 4*[5e-1]
@@ -165,7 +183,7 @@ L1_contact_location_lateral = 8*[0e0]
 L1_contact_location_vertical = 4*[0e0]
 L1_friction_pyramid = 16*[1e2]
 L1_friction_cone = 4*[5e0]
-L1_pen_frame_vel = 12*[1e2]
+L1_pen_frame_vel = 12*[5e2]
 L1_pen_lin_mom = 3*[0e0]
 L1_pen_ang_mom = 3*[0e0]
 L1_pen_com = 3*[0e0]

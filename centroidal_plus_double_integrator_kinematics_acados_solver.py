@@ -163,7 +163,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.ocp.solver_options.tf = N*self.dt
         self.ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         # self.ocp.solver_options.ext_cost_num_hess = 1
-        # self.ocp.solver_options.hpipm_mode = "SPEED"
+        self.ocp.solver_options.hpipm_mode = "SPEED"
         self.ocp.solver_options.integrator_type = "IRK"
         self.ocp.solver_options.sim_method_num_stages = 1
         self.ocp.solver_options.sim_method_num_steps = 1

@@ -177,8 +177,8 @@ class CentroidalPlusLegKinematicsAcadosSimulator:
                         # print("minimum allowed contact location  = ", debris_pos[:2] - self.debris_half_size)
                         # print(self.ee_frame_names[contact_idx]+" simulated contact location  = ", contact_location[:2])
                         # print("maximum allowed contact location  = ", debris_pos[:2] + self.debris_half_size)
-                        if (contact_location[0] >= debris_pos[0] + self.debris_half_size) or (contact_location[0] <= debris_pos[0] - self.debris_half_size) or \
-                           (contact_location[1] >= debris_pos[1] + self.debris_half_size) or (contact_location[1] <= debris_pos[1] - self.debris_half_size):
+                        if (contact_location[0] >= debris_pos[0] + self.debris_half_size + 1e-6) or (contact_location[0] <= debris_pos[0] - self.debris_half_size - 1e-6) or \
+                           (contact_location[1] >= debris_pos[1] + self.debris_half_size + 1e-6) or (contact_location[1] <= debris_pos[1] - self.debris_half_size - 1e-6):
                             print("oh oh .. ", self.ee_frame_names[contact_idx]+"_foot", "is outside assigned debris at time knot ", time_idx)   
                             nb_contact_location_constraint_violations[contact_idx] += 1
                             # add contact position of the previous time step for the rest of non-violated contacts

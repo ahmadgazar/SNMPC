@@ -68,7 +68,6 @@ class Simulator:
         orientation=orientation,
         rgba_color=rgba_color,
         mass=0)
-    pybullet.changeDynamics(step_stone_id, -1, lateralFriction=0.5)    
     end_pos = start_pos + np.array([stone_length, 0, 0])
     return end_pos, step_stone_id   
   
