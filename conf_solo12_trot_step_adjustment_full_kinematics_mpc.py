@@ -17,7 +17,7 @@ gait ={'type': 'TROT',
        'stepHeight' : 0.06,
        'stepKnots' : 15,
        'supportKnots' : 5,
-       'nbSteps': 3}
+       'nbSteps': 4}
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
@@ -33,7 +33,8 @@ robot_mass = pin.computeTotalMass(rmodel)
 
 gravity_constant = -9.81 
 max_leg_length = 0.34
-step_adjustment_bound = 0.07                         
+step_adjustment_bound = 0.07
+heuristic_bound = 0.035                         
 foot_scaling  = 1.
 lxp = 0.01  # foot length in positive x direction
 lxn = 0.01  # foot length in negative x direction
@@ -45,8 +46,7 @@ lyn = 0.01  # foot length in negative y direction
 n_u_per_contact = 3
 nb_contacts = 4
 nq = nb_contacts*n_u_per_contact 
-n_u = 2*nq
-n_x = 9 + nq
+
 q0 = np.array(Solo12Config.initial_configuration.copy())
 q0[0] = 0.0
 urdf = open('solo12.urdf', 'r').read()
@@ -74,6 +74,8 @@ N_ctrl = int((N-1)*(dt/dt_ctrl))
 # ----------------------------------
 Q = 1*np.eye(45)
 R = 1e-1*np.eye(30)
+n_x = Q.shape[0]
+n_u = R.shape[0]
 
 # noise parameters:
 # -----------------
@@ -85,27 +87,27 @@ cov_w_dt = dt*np.diag(
             0e-1, 0e-1, 0e-1, #linear_momentum 
             0e-1, 0e-1, 0e-1, #angular_momentum 
 
-            0.3**2, 0.3**2, 0.3**2,    #base position 
-            0.05**2, 0.05**2, 0.05**2, #drelative base orientation
+            0.3**2, 0.3**2, 0.3**2, #base position 
+            0.2**2, 0.2**2, 0.2**2, #drelative base orientation
 
-            0.5**2, 0.5**2, 0.5**2, #q_FL 
-            0.5**2, 0.5**2, 0.5**2, #q_FR
-            0.5**2, 0.5**2, 0.5**2, #q_HL
-            0.5**2, 0.5**2, 0.5**2, #q_HR
+            0.7**2, 0.7**2, 0.7**2, #q_FL 
+            0.7**2, 0.7**2, 0.7**2, #q_FR
+            0.7**2, 0.7**2, 0.7**2, #q_HL
+            0.7**2, 0.7**2, 0.7**2, #q_HR
 
-            0.2**2, 0.2**2, 0.2**2, #base linear velocity 
-            0.    ,     0.,     0., #base angular velocity
+            0.7**2, 0.7**2, 0.7**2, #base linear velocity 
+            0.1**2, 0.1**2, 0.1**2, #base angular velocity
 
-            0.1**2, 0.1**2, 0.1**2, #qdot_FL 
-            0.1**2, 0.1**2, 0.1**2, #qdot_FR
-            0.1**2, 0.1**2, 0.1**2, #qdot_HL
-            0.1**2, 0.1**2, 0.1**2, #qdot_HR
+            0.7**2, 0.7**2, 0.7**2, #qdot_FL 
+            0.7**2, 0.7**2, 0.7**2, #qdot_FR
+            0.7**2, 0.7**2, 0.7**2, #qdot_HL
+            0.7**2, 0.7**2, 0.7**2, #qdot_HR
       ]
 )     
 beta_u = 0.01 # probability of constraint violation 
 
-# centroidal cost objective weights MPC:
-# -------------------------------------
+# kino-dynamic cost objective weights MPC:
+# ----------------------------------------
 state_cost_weights = 2*np.diag([1e3, 1e3, 1e3,    #com
                                 1e2, 1e2, 1e2,    #linear_momentum 
                                 1e3, 1e3, 1e3,    #angular_momentum 
@@ -113,18 +115,18 @@ state_cost_weights = 2*np.diag([1e3, 1e3, 1e3,    #com
                                1e1, 1e1, 1e1,     #base position 
                                1e3, 1e3, 1e3,     #drelative base position
                               
-                               5e2, 5e2, 5e2,     #q_FL 
-                               5e2, 5e2, 5e2,     #q_FR
-                               5e2, 5e2, 5e2,     #q_HL
-                               5e2, 5e2, 5e2,     #q_HR
+                               4e2, 4e2, 4e2,     #q_FL 
+                               4e2, 4e2, 4e2,     #q_FR
+                               4e2, 4e2, 4e2,     #q_HL
+                               4e2, 4e2, 4e2,     #q_HR
 
                                5e0, 5e0, 5e0,     #base linear velocity 
                                1e2, 1e2, 1e2,     #base angular velocity
                         
-                               5e1, 5e1, 5e1,     #qdot_FL 
-                               5e1, 5e1, 5e1,     #qdot_FR
-                               5e1, 5e1, 5e1,     #qdot_HL
-                               5e1, 5e1, 5e1,     #qdot_HR
+                               4e1, 4e1, 4e1,     #qdot_FL 
+                               4e1, 4e1, 4e1,     #qdot_FR
+                               4e1, 4e1, 4e1,     #qdot_HL
+                               4e1, 4e1, 4e1,     #qdot_HR
 
                               ])     
 

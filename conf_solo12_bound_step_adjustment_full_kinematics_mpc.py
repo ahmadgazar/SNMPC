@@ -11,12 +11,12 @@ dt = 0.01
 dt_ctrl = 0.001
 gait ={'type': 'BOUND',
        'terrain': 'HIKE',
-      'stepLength' : 0.12,  
+      'stepLength' : 0.1,  
       'stepWidth' : 0.1,
       'stepHeight' : 0.05,
       'stepKnots' : 15,
-      'supportKnots' : 12, 
-      'nbSteps': 3}
+      'supportKnots' : 10,  
+      'nbSteps': 4}
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
@@ -32,7 +32,8 @@ robot_mass = pin.computeTotalMass(rmodel)
 
 gravity_constant = -9.81 
 max_leg_length = 0.34
-step_adjustment_bound = 0.08                         
+step_adjustment_bound = 0.07  
+heuristic_bound = 0.035                       
 foot_scaling  = 1.
 lxp = 0.01  # foot length in positive x direction
 lxn = 0.01  # foot length in negative x direction
@@ -44,8 +45,6 @@ lyn = 0.01  # foot length in negative y direction
 n_u_per_contact = 3
 nb_contacts = 4
 nq = nb_contacts*n_u_per_contact 
-n_u = 2*nq
-n_x = 9 + nq
 q0 = np.array(Solo12Config.initial_configuration.copy())
 q0[0] = 0.0
 urdf = open('solo12.urdf', 'r').read()
@@ -73,17 +72,35 @@ N_ctrl = int((N-1)*(dt/dt_ctrl))
 # ----------------------------------
 Q = 1*np.eye(45)
 R = 1e-1*np.eye(30)
-
+n_x = Q.shape[0]
+n_u = R.shape[0]
 # noise parameters:
 # -----------------
 n_w = nb_contacts*3  # no. of contact position parameters
 # uncertainty parameters 
-cov_w_dt = (0.3**2)*dt*np.eye(45)
+cov_w_dt = dt*np.diag(
+      [
+            0e-1, 0e-1, 0e-1, #com
+            0e-1, 0e-1, 0e-1, #linear_momentum 
+            0e-1, 0e-1, 0e-1, #angular_momentum 
 
-# discrete addtive noise
-cov_white_noise = dt*np.diag(np.array([0.85**2, 0.4**2, 0.01**2,
-                                       0.75**2, 0.4**2, 0.01**2,
-                                       0.85**2, 0.4**2, 0.01**2]))
+            0.3**2, 0.3**2, 0.3**2, #base position 
+            0.2**2, 0.2**2, 0.2**2, #drelative base orientation
+
+            0.7**2, 0.7**2, 0.7**2, #q_FL 
+            0.7**2, 0.7**2, 0.7**2, #q_FR
+            0.7**2, 0.7**2, 0.7**2, #q_HL
+            0.7**2, 0.7**2, 0.7**2, #q_HR
+
+            0.7**2, 0.7**2, 0.7**2, #base linear velocity 
+            0.1**2, 0.1**2, 0.1**2, #base angular velocity
+
+            0.7**2, 0.7**2, 0.7**2, #qdot_FL 
+            0.7**2, 0.7**2, 0.7**2, #qdot_FR
+            0.7**2, 0.7**2, 0.7**2, #qdot_HL
+            0.7**2, 0.7**2, 0.7**2, #qdot_HR
+      ]
+)     
 beta_u = 0.01 # probability of constraint violation 
 
 # centroidal cost objective weights MPC:
