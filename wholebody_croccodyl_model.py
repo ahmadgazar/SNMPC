@@ -62,10 +62,13 @@ class WholeBodyModel:
         state, nu = self.state, self.actuation.nu
         for task in swing_feet_tasks:
             if self.rmodel.foot_type == 'POINT_FOOT':
-                frame_pose_residual = crocoddyl.ResidualModelFrameTranslation(state,
-                                                        task[0], task[1].translation, nu)
+                frame_pose_residual = crocoddyl.ResidualModelFrameTranslation(
+                    state, task[0], task[1].translation, nu
+                    )
             elif self.rmodel.foot_type == 'FLAT_FOOT':
-                frame_pose_residual = crocoddyl.ResidualModelFramePlacement(state, task[0], task[1], nu)
+                frame_pose_residual = crocoddyl.ResidualModelFramePlacement(
+                    state, task[0], task[1], nu
+                    )
             verticalFootVelResidual = crocoddyl.ResidualModelFrameVelocity(state, task[0],
                     pinocchio.Motion.Zero(), pinocchio.ReferenceFrame.LOCAL_WORLD_ALIGNED, nu
                     )
@@ -97,9 +100,13 @@ class WholeBodyModel:
             # keep feet horizontal at the time of impact
             for task in swing_feet_tasks:
                 footRotImpactWeight = self.task_weights['swingFoot']['impact']['orientation']
-                frameRotResidual = crocoddyl.ResidualModelFrameRotation(state, task[0], np.eye(3), nu)
+                frameRotResidual = crocoddyl.ResidualModelFrameRotation(
+                    state, task[0], np.eye(3), nu
+                    )
                 frameRotAct = crocoddyl.ActivationModelWeightedQuad(np.array([1, 1, 0]))
-                footRotImpactCost = crocoddyl.CostModelResidual(state,frameRotAct , frameRotResidual) 
+                footRotImpactCost = crocoddyl.CostModelResidual(
+                    state,frameRotAct , frameRotResidual
+                    ) 
                 cost.addCost(self.rmodel.frames[task[0]].name + "_footRotImpact",
                                             footRotImpactCost, footRotImpactWeight)                                                                                     
 
@@ -113,19 +120,29 @@ class WholeBodyModel:
         for frame_idx in support_feet_ids:
             R_cone_local = self.rdata.oMf[frame_idx].rotation.T.dot(self.Rsurf)
             if rmodel.foot_type == 'POINT_FOOT': 
-                support_contact = crocoddyl.ContactModel3D(state, frame_idx, np.array([0., 0., 0.]), 
-                                                                           nu, np.array([0., 50.]))
+                support_contact = crocoddyl.ContactModel3D(
+                    state, frame_idx, np.array([0., 0., 0.]), nu, np.array([0., 50.])
+                    )
                 cone = crocoddyl.FrictionCone(R_cone_local, self.mu, 4, True)
-                cone_residual = crocoddyl.ResidualModelContactFrictionCone(state, frame_idx, cone, nu)
+                cone_residual = crocoddyl.ResidualModelContactFrictionCone(
+                    state, frame_idx, cone, nu
+                    )
             elif rmodel.foot_type == 'FLAT_FOOT':
                 # friction cone
-                support_contact = crocoddyl.ContactModel6D(state, frame_idx, pinocchio.SE3.Identity(),
-                                                                              nu, np.array([0., 50.]))
-                cone = crocoddyl.WrenchCone(self.Rsurf, self.mu, np.array([self.foot_size[0], self.foot_size[1]]))
-                cone_residual = crocoddyl.ResidualModelContactWrenchCone(state, frame_idx, cone, nu)
+                support_contact = crocoddyl.ContactModel6D(
+                    state, frame_idx, pinocchio.SE3.Identity(),nu, np.array([0., 50.])
+                    )
+                cone = crocoddyl.WrenchCone(
+                    self.Rsurf, self.mu, np.array([self.foot_size[0], self.foot_size[1]])
+                    )
+                cone_residual = crocoddyl.ResidualModelContactWrenchCone(
+                    state, frame_idx, cone, nu
+                    )
                 # CoP
                 cop_box = crocoddyl.CoPSupport(self.Rsurf, self.foot_size)
-                cop_residual = crocoddyl.ResidualModelContactCoPPosition(state, frame_idx, cop_box, nu)
+                cop_residual = crocoddyl.ResidualModelContactCoPPosition(
+                    state, frame_idx, cop_box, nu
+                    )
                 cop_activation = crocoddyl.ActivationModelQuadraticBarrier(
                     crocoddyl.ActivationBounds(cop_box.lb, cop_box.ub)
                     )
@@ -136,7 +153,9 @@ class WholeBodyModel:
                 crocoddyl.ActivationBounds(cone.lb, cone.ub)
                 )
             friction_cone = crocoddyl.CostModelResidual(state, cone_activation, cone_residual)
-            cost.addCost(rmodel.frames[frame_idx].name + "_frictionCone", friction_cone, frictionConeWeight)
+            cost.addCost(
+                rmodel.frames[frame_idx].name + "_frictionCone", friction_cone, frictionConeWeight
+                )
     
     def add_com_position_tracking_cost(self, cost, com_des):    
         com_residual = crocoddyl.ResidualModelCoMPosition(self.state, com_des, self.actuation.nu)
@@ -164,8 +183,12 @@ class WholeBodyModel:
         lb = np.concatenate([self.state.lb[1:self.state.nv + 1], self.state.lb[-self.state.nv:]])
         ub = np.concatenate([self.state.ub[1:self.state.nv + 1], self.state.ub[-self.state.nv:]])
         stateBoundsResidual = crocoddyl.ResidualModelState(self.state, nu)
-        stateBoundsActivation = crocoddyl.ActivationModelQuadraticBarrier(crocoddyl.ActivationBounds(lb, ub))
-        stateBounds = crocoddyl.CostModelResidual(self.state, stateBoundsActivation, stateBoundsResidual)
+        stateBoundsActivation = crocoddyl.ActivationModelQuadraticBarrier(
+            crocoddyl.ActivationBounds(lb, ub)
+            )
+        stateBounds = crocoddyl.CostModelResidual(
+            self.state, stateBoundsActivation, stateBoundsResidual
+            )
         cost.addCost("stateBounds", stateBounds, state_bounds_weight)
         # control regularization cost
         ctrlResidual = crocoddyl.ResidualModelControl(self.state, nu)
@@ -241,22 +264,27 @@ class WholeBodyModel:
         for gait in self.gait_templates:
             for phase in gait:
                 if robot_type == 'QUADRUPED' and phase == 'doubleSupport':
-                    loco3dModel += self.createDoubleSupportFootstepModels([lfFootPos0, rfFootPos0, 
-                                                                          lhFootPos0, rhFootPos0])
+                    loco3dModel += self.createDoubleSupportFootstepModels(
+                        [lfFootPos0, rfFootPos0, lhFootPos0, rhFootPos0]
+                        )
                 elif robot_type == 'HUMANOID' and phase == 'doubleSupport':
                     loco3dModel += self.createDoubleSupportFootstepModels([lfFootPos0, rfFootPos0])
                 elif phase == 'rfrhStep':
-                    loco3dModel += self.createSingleSupportFootstepModels([rfFootPos0, rhFootPos0], 
-                                    [self.lfFootId, self.lhFootId], [self.rfFootId, self.rhFootId])
+                    loco3dModel += self.createSingleSupportFootstepModels(
+                        [rfFootPos0, rhFootPos0], [self.lfFootId, self.lhFootId], [self.rfFootId, self.rhFootId]
+                        )
                 elif phase == 'rfStep':
-                    loco3dModel += self.createSingleSupportFootstepModels([rfFootPos0], 
-                                                     [self.lfFootId], [self.rfFootId])
+                    loco3dModel += self.createSingleSupportFootstepModels(
+                        [rfFootPos0], [self.lfFootId], [self.rfFootId]
+                        )
                 elif phase == 'lflhStep':
-                    loco3dModel += self.createSingleSupportFootstepModels([lfFootPos0, lhFootPos0], 
-                                    [self.rfFootId, self.rhFootId], [self.lfFootId, self.lhFootId])
+                    loco3dModel += self.createSingleSupportFootstepModels(
+                        [lfFootPos0, lhFootPos0], [self.rfFootId, self.rhFootId], [self.lfFootId, self.lhFootId]
+                        )
                 elif phase == 'lfStep':
-                    loco3dModel += self.createSingleSupportFootstepModels([lfFootPos0], 
-                                                      [self.rfFootId], [self.lfFootId])                                                                
+                    loco3dModel += self.createSingleSupportFootstepModels(
+                        [lfFootPos0], [self.rfFootId], [self.lfFootId]
+                        )                                                                
         #Rescaling the terminal weights
         costs = loco3dModel[-1].differential.costs.costs.todict()
         for c in costs.values():
@@ -292,13 +320,15 @@ class WholeBodyModel:
                         )
                 elif phase == 'rflfStep':
                     loco3dModel += self.createSingleSupportFootstepModels(
-                        [rfFootPos0, lfFootPos0], [self.rhFootId, self.lhFootId], 
+                        [rfFootPos0, lfFootPos0], 
+                        [self.rhFootId, self.lhFootId], 
                         [self.rfFootId, self.lfFootId],
                         HIKE_DIRECTION
                         )              
                 elif phase == 'rhlhStep':
                     loco3dModel += self.createSingleSupportFootstepModels(
-                        [rhFootPos0, lhFootPos0], [self.rfFootId, self.lfFootId], 
+                        [rhFootPos0, lhFootPos0], 
+                        [self.rfFootId, self.lfFootId], 
                         [self.rhFootId, self.lhFootId],
                         HIKE_DIRECTION
                         )
@@ -332,7 +362,7 @@ class WholeBodyModel:
                         [lfFootPos0, rfFootPos0, lhFootPos0, rhFootPos0]
                         )
                 elif phase == 'NONE':
-                    loco3dModel += self.createSingleSupportFootstepModels(
+                    loco3dModel += self.createSingleSupportJumpFootstepModels(
                         [lfFootPos0, rfFootPos0, lhFootPos0, rhFootPos0], 
                         [], 
                         [self.lfFootId, self.rfFootId, self.lhFootId, self.rhFootId],
@@ -352,9 +382,80 @@ class WholeBodyModel:
             for i, p in zip(supportFeetIds, feetPos):
                 swingFootTask += [[i, pinocchio.SE3(np.eye(3), p)]]
           
-            doubleSupportModel += [self.createSwingFootModel(supportFeetIds, swingFootTask=swingFootTask)]               
+            doubleSupportModel += [
+                self.createSwingFootModel(supportFeetIds, swingFootTask=swingFootTask)
+                ]               
         return doubleSupportModel
 
+    def createSingleSupportJumpFootstepModels(self, feetPos0, supportFootIds, swingFootIds, HIKE_DIRECTION='FLAT'):
+        numLegs = len(supportFootIds) + len(swingFootIds)
+        stepLength, stepHeight = self.gait['stepLength'], self.gait['stepHeight']
+        StepWidth, numKnots = self.gait['stepWidth'], self.gait['stepKnots']
+        phKnots = numKnots/2
+        stepHeight = self.gait['stepHeight']
+        jumpHeight = self.gait['jumpHeight']
+        df = stepHeight + feetPos0[0][2]
+        # Action models for the foot swing
+        footSwingModel = []
+        for k in range(numKnots):
+            swingFootTask = []
+            # swing feet tasks 
+            for i, p in zip(swingFootIds, feetPos0):
+                if HIKE_DIRECTION == 'UP':
+                    phKnots = numKnots/2
+                    # if k < phKnots:
+                    #     dp = np.array(
+                    #         [stepLength*(k+1)/numKnots, 0., 1.8*stepHeight*k/phKnots]
+                    #         )
+                    #     tref = p + dp
+                    #     swingFootTask += [[i, pinocchio.SE3(np.eye(3), tref)]]
+                    if k == phKnots:
+                        dp = np.array(
+                            [stepLength*(k+1)/numKnots, 0., 2.5*stepHeight]
+                            )
+                        tref = p + dp
+                        swingFootTask += [[i, pinocchio.SE3(np.eye(3), tref)]]
+                    # else:
+                    #     dp = np.array(
+                    #         [stepLength*(k+1)/numKnots, 0., 1.5*stepHeight*(1-float(k-phKnots)/phKnots)]
+                    #         )
+                    # swing foot at landing
+                    if k == numKnots-1:
+                        dp = np.array([stepLength, 0., stepHeight])  
+                        tref = p + dp
+                        swingFootTask += [[i, pinocchio.SE3(np.eye(3), tref)]]
+                    # else:
+                    #     swingFootTask = None        
+            if k == numKnots-1:
+                self.postImpact = swingFootTask
+            else:
+                self.postImpact = None
+            # CoM task
+            if HIKE_DIRECTION == 'UP':
+                # flying
+                if k < phKnots:
+                    comTask = np.array(
+                        [stepLength, 0., stepHeight+jumpHeight]
+                        )*(k+1)/numKnots + self.comRef
+                # at landing instance
+                elif k == numKnots-1:
+                    comTask = np.array(
+                        [stepLength, 0., stepHeight]
+                        ) + self.comRef
+                # else:
+                #     comTask = None
+            footSwingModel += [
+                self.createSwingFootModel(
+                    supportFootIds, comTask=comTask, swingFootTask=swingFootTask
+                )
+                    ]
+        # Updating the feet positions and CoM for next step
+        if HIKE_DIRECTION == 'UP':
+            self.comRef += [stepLength, 0., stepHeight]
+            for p in feetPos0:
+                p += [stepLength, 0., stepHeight]
+        return footSwingModel 
+            
     def createSingleSupportFootstepModels(self, feetPos0, supportFootIds, swingFootIds, HIKE_DIRECTION='FLAT'):
         numLegs = len(supportFootIds) + len(swingFootIds)
         comPercentage = float(len(swingFootIds)) / numLegs
