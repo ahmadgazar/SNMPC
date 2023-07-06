@@ -8,7 +8,7 @@ import time
 
 class CentroidalPlusLegKinematicsAcadosSolver:
     # constructor
-    def __init__(self, model, x_ref, u_ref, MPC=False, WARM_START=True):
+    def __init__(self, model, x_ref, u_ref, heurestic_safety_margin=0., MPC=False, WARM_START=True):
         self.RECEEDING_HORIZON = MPC
         # timing
         self.N_mpc = model._N_mpc
@@ -40,6 +40,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         self.ny = self.nx + self.nu + self.swing_cost_weights.shape[0]
         # contact location bound
         self.step_bound = model._step_bound
+        self.heurestic_safety_margin = heurestic_safety_margin
         if model._robot_type == 'QUADRUPED':
             self.nb_contacts = 4
         elif model._robot_type == 'HUMANOID':
@@ -50,7 +51,9 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         if MPC:
             self.ocp.dims.N = self.N_mpc
         else:
-            self.ocp.dims.N = self.N_traj    
+            self.ocp.dims.N = self.N_traj 
+        if model._STOCHASTIC_OCP:
+            self.eta = norm.ppf(1-model._beta_u)    
         # initialize stuff
         self.__fill_init_params()
         self.__init_pinocchio_robot()
@@ -120,6 +123,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
              self.x_init[0][9:12] , np.zeros(3), self.x_init[0][16:28], # q 
              self.x_init[0][28:31], np.zeros(3), self.x_init[0][34:]]   # qdot
         )
+        self.x0 = x0
         # initial constraints
         ocp.constraints.x0 = x0
         if not self.RECEEDING_HORIZON:
@@ -170,7 +174,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         # self.ocp.solver_options.sim_method_newton_iter = 1
         self.ocp.solver_options.print_level = 0
         self.ocp.solver_options.qp_solver_cond_N = N
-        self.ocp.solver_options.qp_solver_iter_max = 15
+        self.ocp.solver_options.qp_solver_iter_max = 10
         # ocp.solver_options.sim_method_newton_iter = 10
         ## ---------------------
         ##  NLP solver settings
@@ -451,7 +455,7 @@ class CentroidalPlusLegKinematicsAcadosSolver:
                                 (constraint_row @ Sigma_next[9:27, 9:27]) @ constraint_row.T 
                                 )
                     else:
-                        backoff = 0.
+                        backoff = self.heurestic_safety_margin
                     lg_lateral[idx] = contact_logic*(
                         temp - step_bound + backoff
                         )
@@ -564,8 +568,6 @@ class CentroidalPlusLegKinematicsAcadosSolver:
         nx, nu, N = self.nx, self.nu, self.N_traj
         # save LQR gains
         K_total = np.zeros((N, nu, nx)) 
-        if STOCHASTIC:
-            self.eta = norm.ppf(1-self.model._beta_u)
         if self.RECEEDING_HORIZON:
             X_sim, U_sim = self.run_mpc()
         else:
