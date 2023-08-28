@@ -16,7 +16,7 @@ gait ={'type': 'BOUND',
       'stepHeight' : 0.05,
       'stepKnots' : 15,
       'supportKnots' : 10,  
-      'nbSteps': 4}
+      'nbSteps': 3}
 mu = 0.5 # linear friction coefficient
 
 # robot model and parameters
@@ -33,7 +33,7 @@ robot_mass = pin.computeTotalMass(rmodel)
 gravity_constant = -9.81 
 max_leg_length = 0.34
 step_adjustment_bound = 0.07  
-heuristic_bound = 0.035                       
+heuristic_bound = 0.03                       
 foot_scaling  = 1.
 lxp = 0.01  # foot length in positive x direction
 lxn = 0.01  # foot length in negative x direction
@@ -92,7 +92,7 @@ cov_w_dt = dt*np.diag(
             0.7**2, 0.7**2, 0.7**2, #q_HL
             0.7**2, 0.7**2, 0.7**2, #q_HR
 
-            0.7**2, 0.7**2, 0.7**2, #base linear velocity 
+            0.8**2, 0.8**2, 0.8**2, #base linear velocity 
             0.1**2, 0.1**2, 0.1**2, #base angular velocity
 
             0.7**2, 0.7**2, 0.7**2, #qdot_FL 
@@ -154,10 +154,10 @@ L2_pen_g = np.array([0e3, 0e3, 0e0,
                      0e3, 0e3, 0e0,
                      0e3, 0e3, 0e0])
 
-L1_pen_g = np.array([1e4, 1e4, 1e4,
-                     1e4, 1e4, 1e4,
-                     1e4, 1e4, 1e4,
-                     1e4, 1e4, 1e4])                                                                                              
+L1_pen_g = np.array([1e4, 1e4, 3e4,
+                     1e4, 1e4, 3e4,
+                     1e4, 1e4, 3e4,
+                     1e4, 1e4, 3e4])                                                                                              
 
 # slack penalties on nonlinear constraints
 L2_contact_location_lateral = 8*[0e0]

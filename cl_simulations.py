@@ -51,14 +51,14 @@ def call_trot(conf_trot, x_warmstart_trot, u_warmstart_trot, nb_sims):
         solver_heuristic_trot.x0, np.copy(w_total_trot), nb_sims=nb_sims, WITH_DISTURBANCES=True
         )
     # count constraint violations trot
-    violations_nom_trot, ee_positions_nom_trot = simulator_nom_trot.count_constraint_violations(
-        x_sim_nom_trot, WITH_VISUALIZATION=False
+    violations_nom_trot, ee_positions_nom_trot, cost_nom_success_trot = simulator_nom_trot.count_constraint_violations(
+        x_sim_nom_trot, cost_nom_trot, WITH_VISUALIZATION=False
         )
-    violations_stoch_trot, ee_positions_stoch_trot = simulator_stoch_trot.count_constraint_violations(
-        x_sim_stoch_trot, WITH_VISUALIZATION=False
+    violations_stoch_trot, ee_positions_stoch_trot, cost_stoch_success_trot = simulator_stoch_trot.count_constraint_violations(
+        x_sim_stoch_trot, cost_stoch_trot, WITH_VISUALIZATION=False
         )
-    violations_heuristic_trot, ee_positions_heuristic_trot = simulator_heuristic_trot.count_constraint_violations(
-        x_sim_heuristic_trot, WITH_VISUALIZATION=False
+    violations_heuristic_trot, ee_positions_heuristic_trot, cost_heuristic_success_trot = simulator_heuristic_trot.count_constraint_violations(
+        x_sim_heuristic_trot, cost_heuristic_trot, WITH_VISUALIZATION=False
         )
     # visualize end-effector trajectories trot
     robot = Solo12Config.buildRobotWrapper()
@@ -305,7 +305,7 @@ def call_trot(conf_trot, x_warmstart_trot, u_warmstart_trot, nb_sims):
     print("number of contact location constraint violations for stochastic MPC trot:", violations_stoch_trot)
     return norm_contact_location_deviation_nom_total_trot, norm_contact_location_deviation_stoch_total_trot, \
            mean_nom_total_trot, mean_stoch_total_trot, std_nom_total_trot, std_stoch_total_trot, violations_nom_trot, \
-           violations_stoch_trot, cost_nom_trot, cost_stoch_trot, cost_heuristic_trot, mean_heuristic_total_trot,\
+           violations_stoch_trot, cost_nom_success_trot, cost_stoch_success_trot, cost_heuristic_success_trot, mean_heuristic_total_trot,\
            std_heuristic_total_trot, violations_heuristic_trot       
 
 def call_bound(conf_bound, x_warmstart_bound, u_warmstart_bound, nb_sims):
@@ -347,14 +347,14 @@ def call_bound(conf_bound, x_warmstart_bound, u_warmstart_bound, nb_sims):
         solver_heuristic_bound.x0, np.copy(w_total_bound), nb_sims=nb_sims, WITH_DISTURBANCES=True
         )
     # count constraint violations bound
-    violations_nom_bound, ee_positions_nom_bound = simulator_nom_bound.count_constraint_violations(
-        x_sim_nom_bound, WITH_VISUALIZATION=False
+    violations_nom_bound, ee_positions_nom_bound, cost_nom_success_bound = simulator_nom_bound.count_constraint_violations(
+        x_sim_nom_bound, cost_nom_bound, WITH_VISUALIZATION=False
         )
-    violations_stoch_bound, ee_positions_stoch_bound = simulator_stoch_bound.count_constraint_violations(
-        x_sim_stoch_bound, WITH_VISUALIZATION=False
+    violations_stoch_bound, ee_positions_stoch_bound, cost_stoch_success_bound = simulator_stoch_bound.count_constraint_violations(
+        x_sim_stoch_bound, cost_stoch_bound, WITH_VISUALIZATION=False
         )
-    violations_heuristic_bound, ee_positions_heuristic_bound = simulator_heuristic_bound.count_constraint_violations(
-        x_sim_heuristic_bound, WITH_VISUALIZATION=False
+    violations_heuristic_bound, ee_positions_heuristic_bound, cost_heuristic_success_bound = simulator_heuristic_bound.count_constraint_violations(
+        x_sim_heuristic_bound, cost_heuristic_bound, WITH_VISUALIZATION=False
         )
     # visualize end-effector trajectories bound
     robot = Solo12Config.buildRobotWrapper()
@@ -568,7 +568,7 @@ def call_bound(conf_bound, x_warmstart_bound, u_warmstart_bound, nb_sims):
         norm_contact_location_deviation_nom_total_bound += [norm_contact_location_deviation_nom_per_traj_bound]
         norm_contact_location_deviation_stoch_total_bound += [norm_contact_location_deviation_stoch_per_traj_bound]
         norm_contact_location_deviation_heuristic_total_bound += [norm_contact_location_deviation_heuristic_per_traj_bound]
-    # compute statistics trot
+    # compute statistics bound
     mean_nom_total_bound = np.zeros(conf_bound.N)
     std_nom_total_bound = np.zeros(conf_bound.N)
     mean_stoch_total_bound = np.zeros(conf_bound.N)
@@ -668,13 +668,14 @@ if __name__ == "__main__":
     print("number of contact location constraint violations for nominal MPC bound:", violations_nom_bound)
     print("number of contact location constraint violations for stochastic MPC bound:", violations_stoch_bound)
     print("number of contact location constraint violations for heuristic MPC bound:", violations_heuristic_bound)
+    
     # plot the mean and std-dev of contact location deviations over the horizon length trot
     fig1, ax1 = plt.subplots(1, 1, sharex=True) 
     time_stoch_trot = np.arange(0, np.round(
         (len(norm_contact_location_deviation_stoch_total_trot[0]))*conf_trot.dt, 2), conf_trot.dt
         )
     # stochastic trot
-    ax1.plot(time_stoch_trot, mean_stoch_total_trot, color='green', label='trot stoch.')
+    ax1.plot(time_stoch_trot, mean_stoch_total_trot, color='green', label='trot stochastic')
     ax1.fill_between(
             time_stoch_trot,
             mean_stoch_total_trot+2*std_stoch_total_trot,
@@ -700,7 +701,7 @@ if __name__ == "__main__":
             color='blue',
             alpha=0.1
         )
-    ax1.set_xlabel('Time (s)', fontsize=14)
+    ax1.set_xlabel('Time (s)', fontsize=18)
     ax1.set_ylabel('Norm of contact locations deviations (m)', fontsize=14)
     # plot the mean and std-dev of contact location deviations over the horizon length bound
     time_stoch_bound = np.arange(
@@ -734,73 +735,77 @@ if __name__ == "__main__":
         color='blue',
         alpha=0.1
     )
-    ax1.legend()
-    ax2.legend()
-    # # plot least squares cost
-    # # compute statistics
-    # # trot 
-    # mean_LS_nom_total_trot = np.zeros(conf_trot.N)
-    # std_LS_nom_total_trot = np.zeros(conf_trot.N)
-    # mean_LS_stoch_total_trot = np.zeros(conf_trot.N)
-    # std_LS_stoch_total_trot = np.zeros(conf_trot.N)
-    # mean_LS_heuristic_total_trot = np.zeros(conf_trot.N)
-    # std_LS_heuristic_total_trot = np.zeros(conf_trot.N)
-    # # bound 
-    # mean_LS_nom_total_bound = np.zeros(conf_bound.N)
-    # std_LS_nom_total_bound = np.zeros(conf_bound.N)
-    # mean_LS_stoch_total_bound = np.zeros(conf_bound.N)
-    # std_LS_stoch_total_bound = np.zeros(conf_bound.N)
-    # mean_LS_heuristic_total_bound = np.zeros(conf_bound.N)
-    # std_LS_heuristic_total_bound = np.zeros(conf_bound.N)
-    # # trajectory loop
-    # for traj_idx in range(conf_trot.N):
-    #     # bound least-squares cost samples
-    #     samples_LS_nom_k_trot = []
-    #     samples_LS_stoch_k_trot = []
-    #     samples_LS_heuristic_k_trot = []
-    #     # bound least-squares cost samples
-    #     samples_LS_nom_k_bound = []
-    #     samples_LS_stoch_k_bound = []
-    #     samples_LS_heuristic_k_bound = []
-    #     # samples loop
-    #     for sim in range(nb_sims):
-    #         # nominal
-    #         if traj_idx < len(cost_nom_trot[sim]):
-    #             samples_LS_nom_k_trot += [cost_nom_trot[sim, traj_idx]]
-    #         if traj_idx < len(cost_nom_bound[sim]):
-    #             samples_LS_nom_k_bound += [cost_nom_bound[sim, traj_idx]]    
-    #         # heuristic
-    #         if traj_idx < len(cost_heuristic_trot[sim]):
-    #             samples_LS_heuristic_k_trot += [cost_heuristic_trot[sim, traj_idx]]
-    #         if traj_idx < len(cost_heuristic_bound[sim]):
-    #             samples_LS_heuristic_k_bound += [cost_heuristic_bound[sim, traj_idx]]        
-    #         # stochastic
-    #         samples_LS_stoch_k_trot += [cost_stoch_trot[sim, traj_idx]]
-    #         samples_LS_stoch_k_bound += [cost_stoch_bound[sim, traj_idx]]
-    #     # nominal
-    #     mean_LS_nom_total_trot[traj_idx] = np.mean(samples_LS_nom_k_trot)
-    #     std_LS_nom_total_trot[traj_idx] = np.std(samples_LS_nom_k_trot)
-    #     mean_LS_nom_total_bound[traj_idx] = np.mean(samples_LS_nom_k_bound)
-    #     std_LS_nom_total_bound[traj_idx] = np.std(samples_LS_nom_k_bound)
-    #     # stochastic
-    #     mean_LS_stoch_total_trot[traj_idx] = np.mean(samples_LS_stoch_k_trot)
-    #     std_LS_stoch_total_trot[traj_idx] = np.std(samples_LS_stoch_k_trot)
-    #     mean_LS_stoch_total_bound[traj_idx] = np.mean(samples_LS_stoch_k_bound)
-    #     std_LS_stoch_total_bound[traj_idx] = np.std(samples_LS_stoch_k_bound)
-    #     # heuristic
-    #     mean_LS_heuristic_total_trot[traj_idx] = np.mean(samples_LS_heuristic_k_trot)
-    #     std_LS_heuristic_total_trot[traj_idx] = np.std(samples_LS_heuristic_k_trot)
-    #     mean_LS_heuristic_total_bound[traj_idx] = np.mean(samples_LS_heuristic_k_bound)
-    #     std_LS_heuristic_total_bound[traj_idx] = np.std(samples_LS_heuristic_k_bound)
-    
-    # # plot the mean and std of the LS cost over the horizon length 
-    # fig, ax = plt.subplots(1, 1, sharex=True) 
-    # time_trot = np.arange(0, np.round((len(norm_contact_location_deviation_stoch_total_trot[0]))*conf_trot.dt, 2), conf_trot.dt)
-    # time_bound = np.arange(0, np.round((len(norm_contact_location_deviation_stoch_total_bound[0]))*conf_bound.dt, 2), conf_bound.dt)
+    ax2.set_xlabel('Time (s)', fontsize=18)
+    ax1.legend(fontsize=14)
+    ax2.legend(fontsize=14)
+    # plot least squares cost
+    # compute statistics
+    # trot 
+    mean_LS_nom_total_trot = np.zeros(conf_trot.N)
+    std_LS_nom_total_trot = np.zeros(conf_trot.N)
+    mean_LS_stoch_total_trot = np.zeros(conf_trot.N)
+    std_LS_stoch_total_trot = np.zeros(conf_trot.N)
+    mean_LS_heuristic_total_trot = np.zeros(conf_trot.N)
+    std_LS_heuristic_total_trot = np.zeros(conf_trot.N)
+    # trajectory loop
+    for traj_idx in range(conf_trot.N):
+        # trot least-squares cost samples
+        samples_LS_nom_k_trot = []
+        samples_LS_stoch_k_trot = []
+        samples_LS_heuristic_k_trot = []
+        # samples loop
+        # for sim in range(nb_sims):
+            # nominal
+            # if traj_idx < len(cost_nom_trot[sim]):
+            #     samples_LS_nom_k_trot += [cost_nom_trot[sim, traj_idx]]
+            # if traj_idx < len(cost_nom_bound[sim]):
+            #     samples_LS_nom_k_bound += [cost_nom_bound[sim, traj_idx]]    
+            # heuristic
+            # if traj_idx < len(cost_heuristic_trot[sim]):
+            #     samples_LS_heuristic_k_trot += [cost_heuristic_trot[sim, traj_idx]]
+            # if traj_idx < len(cost_heuristic_bound[sim]):
+            #     samples_LS_heuristic_k_bound += [cost_heuristic_bound[sim, traj_idx]]        
+            # stochastic
+            # samples_LS_stoch_k_trot += [cost_stoch_trot[sim, traj_idx]]
+            # samples_LS_stoch_k_bound += [cost_stoch_bound[sim, traj_idx]]
+        # nominal
+        mean_LS_nom_total_trot[traj_idx] = np.mean(cost_nom_trot)
+        std_LS_nom_total_trot[traj_idx] = np.std(cost_nom_trot)
+        # stochastic
+        mean_LS_stoch_total_trot[traj_idx] = np.mean(cost_stoch_trot)
+        std_LS_stoch_total_trot[traj_idx] = np.std(cost_stoch_trot)
+        # heuristic
+        mean_LS_heuristic_total_trot[traj_idx] = np.mean(cost_heuristic_trot)
+        std_LS_heuristic_total_trot[traj_idx] = np.std(cost_heuristic_trot)
+    # bound 
+    mean_LS_nom_total_bound = np.zeros(conf_bound.N)
+    std_LS_nom_total_bound = np.zeros(conf_bound.N)
+    mean_LS_stoch_total_bound = np.zeros(conf_bound.N)
+    std_LS_stoch_total_bound = np.zeros(conf_bound.N)
+    mean_LS_heuristic_total_bound = np.zeros(conf_bound.N)
+    std_LS_heuristic_total_bound = np.zeros(conf_bound.N)
+    for traj_idx in range(conf_bound.N):
+        # bound least-squares cost samples
+        samples_LS_nom_k_bound = []
+        samples_LS_stoch_k_bound = []
+        samples_LS_heuristic_k_bound = []
+        # nominal
+        mean_LS_nom_total_bound[traj_idx] = np.mean(cost_nom_bound)
+        std_LS_nom_total_bound[traj_idx] = np.std(cost_nom_bound)
+        # stochastic
+        mean_LS_stoch_total_bound[traj_idx] = np.mean(cost_stoch_bound)
+        std_LS_stoch_total_bound[traj_idx] = np.std(cost_stoch_bound)
+        # heuristic
+        mean_LS_heuristic_total_bound[traj_idx] = np.mean(cost_heuristic_bound)
+        std_LS_heuristic_total_bound[traj_idx] = np.std(cost_heuristic_bound)
+    # plot the mean and std of the LS cost over the horizon length 
+    fig, ax = plt.subplots(1, 1, sharex=True) 
+    time_trot = np.arange(0, np.round((len(norm_contact_location_deviation_stoch_total_trot[0]))*conf_trot.dt, 2), conf_trot.dt)
+    time_bound = np.arange(0, np.round((len(norm_contact_location_deviation_stoch_total_bound[0]))*conf_bound.dt, 2), conf_bound.dt)
 
-    # # stochastic 
-    # # ----------
-    # # trot
+    # stochastic 
+    # ----------
+    # trot
     # plt.plot(time_trot, mean_LS_stoch_total_trot, color='green')
     # plt.fill_between(
     #     time_trot,
@@ -808,7 +813,7 @@ if __name__ == "__main__":
     #     mean_LS_stoch_total_trot-2*std_LS_stoch_total_trot,
     #     color='green', alpha=0.1
     #     )
-    # # bound
+    # bound
     # plt.plot(time_bound, mean_LS_stoch_total_bound, color='orange')
     # plt.fill_between(
     #     time_bound,
@@ -817,9 +822,9 @@ if __name__ == "__main__":
     #     color='orange', alpha=0.1
     #     )
     
-    # # nominal
-    # # -------
-    # # trot
+    # nominal
+    # -------
+    # trot
     # plt.plot(time_trot, mean_LS_nom_total_trot, color='red')
     # plt.fill_between(
     # time_trot, 
@@ -828,8 +833,8 @@ if __name__ == "__main__":
     # color='red', 
     # alpha=0.1
     # )
-    # # bound
-    # # -----
+    # bound
+    # -----
     # plt.plot(time_bound, mean_LS_nom_total_bound, color='blue')
     # plt.fill_between(
     # time_bound, 
@@ -838,10 +843,10 @@ if __name__ == "__main__":
     # color='blue', 
     # alpha=0.1
     # )
-    # # heuristic
-    # # ---------
-    # # trot
-    # plt.plot(time_trot, mean_LS_heuristic_total_trot, color='blue')
+    # heuristic
+    # ---------
+    # trot
+    # plt.plot(time_trot, mean_LS_heuristic_total_trot, color='yellow')
     # plt.fill_between(
     # time_trot, 
     # mean_LS_heuristic_total_trot+2*std_LS_heuristic_total_trot,
@@ -849,7 +854,7 @@ if __name__ == "__main__":
     # color='blue', 
     # alpha=0.1
     # )
-    # # bound
+    # bound
     # plt.plot(time_bound, mean_LS_heuristic_total_bound, color='cyan')
     # plt.fill_between(
     # time_bound, 
@@ -860,4 +865,41 @@ if __name__ == "__main__":
     # )
     # ax.set_xlabel('Time (s)', fontsize=14)
     # ax.set_ylabel('Least squares cost', fontsize=14)
+    # print total cost
+    # trot
+    # print("total cost for nominal MPC trot:", mean_LS_nom_total_trot[-1])
+    # print("total cost for stochastic MPC trot:", mean_LS_stoch_total_trot[-1])
+    # print("total cost for heuristic MPC trot:", mean_LS_heuristic_total_trot[-1])
+    # bound
+    # print("total cost for nominal MPC bound:", mean_LS_nom_total_bound[-1])
+    # print("total cost for stochastic MPC bound:", mean_LS_stoch_total_bound[-1])
+    # print("total cost for heuristic MPC bound:", mean_LS_heuristic_total_bound[-1])
+    
+    # save data
+    # trot
+    np.savez(
+        'monte_carlo_sims_trot', 
+        mean_nom_total_trot=mean_nom_total_trot, std_nom_total_trot=std_nom_total_trot,
+        mean_heuristic_total_trot=mean_heuristic_total_trot, std_heuristic_total_trot=std_heuristic_total_trot,
+        mean_stoch_total_trot=mean_stoch_total_trot, std_stoch_total_trot=std_stoch_total_trot,
+        violations_nom_trot=violations_nom_trot,
+        violations_heuristic_trot=violations_heuristic_trot,
+        violations_stoch_trot=violations_stoch_trot,
+        mean_LS_nom_total_trot=mean_LS_nom_total_trot,
+        mean_LS_heuristic_total_trot=mean_LS_heuristic_total_trot,
+        mean_LS_stoch_total_trot=mean_LS_stoch_total_trot
+    )
+    # bound
+    np.savez(
+        'monte_carlo_sims_bound', 
+        mean_nom_total_bound=mean_nom_total_bound, std_nom_total_bound=std_nom_total_bound,
+        mean_heuristic_total_bound=mean_heuristic_total_bound, std_heuristic_total_bound=std_heuristic_total_bound,
+        mean_stoch_total_bound=mean_stoch_total_bound, std_stoch_total_bound=std_stoch_total_bound,
+        violations_nom_bound=violations_nom_bound,
+        violations_heuristic_bound=violations_heuristic_bound,
+        violations_stoch_bound=violations_stoch_bound,
+        mean_LS_nom_total_bound=mean_LS_nom_total_bound,
+        mean_LS_heuristic_total_bound=mean_LS_heuristic_total_bound,
+        mean_LS_stoch_total_bound=mean_LS_stoch_total_bound
+    )
     plt.show()

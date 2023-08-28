@@ -66,7 +66,31 @@ R = 0.1*np.eye(30)
 # -----------------
 n_w = nb_contacts*3  # no. of contact position parameters
 # uncertainty parameters 
-cov_w_dt = (0.25**2)*dt*np.eye(45)
+# cov_w_dt = (0.5**2)*dt*np.eye(45)
+cov_w_dt = dt*np.diag(
+    [
+     # com, lin. and ang. momenta
+     0.05, 0.05, 0.05,
+     0.05, 0.05, 0.05,
+     0.05, 0.05, 0.05,
+     # base pos. and orient.
+     0.4**2, 0.4**2, 0.4**2,
+     0.4**2, 0.4**2, 0.4**2,
+     # joint pos.
+     0.4**2, 0.4**2, 0.4**2,
+     0.4**2, 0.4**2, 0.4**2,
+     0.4**2, 0.4**2, 0.4**2,
+     0.4**2, 0.4**2, 0.4**2,
+     # base lin. and ang. vel.
+     0.05**2, 0.05**2, 0.05**2,
+     0.05**2, 0.05**2, 0.05**2, 
+     # joint vel.
+     0.2**2, 0.2**2, 0.2**2,
+     0.2**2, 0.2**2, 0.2**2,
+     0.2**2, 0.2**2, 0.2**2,
+     0.2**2, 0.2**2, 0.2**2
+    ]
+    )
 
 # discrete addtive noise
 cov_white_noise = dt*np.diag(np.array([0.85**2, 0.4**2, 0.01**2,

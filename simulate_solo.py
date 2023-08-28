@@ -24,7 +24,6 @@ class Simulator:
     self.dt_plan = conf.dt
     self.N = conf.N_ctrl
     self.m = conf.robot_mass
-    self.cov = conf.cov_white_noise
     mu = conf.mu/np.sqrt(2)
     self.centroidal_gains = K
     self.contact_sequence = contact_sequence
