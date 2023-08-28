@@ -72,14 +72,13 @@ class CentroidalPlusLegKinematicsAcadosSimulator:
         x *= r
         return v @ (np.sqrt(lam)*x) + mu
             
-    def count_constraint_violations(self, x_sim, WITH_VISUALIZATION=False):
+    def count_constraint_violations(self, x_sim, total_cost, WITH_VISUALIZATION=False):
         nb_contact_location_constraint_violations = [0, 0, 0, 0]
         contacts_position_N = self.contact_data['contacts_position'] 
         contacts_logic_N = self.contact_data['contacts_logic']
         rmodel = self.pin_model
         rdata = rmodel.createData()
         x_ref_N = self.x_init
-        simulated_ee_positions = []
         if WITH_VISUALIZATION:
             # visualize motion in meshcat
             dt = self.dt
@@ -121,7 +120,8 @@ class CentroidalPlusLegKinematicsAcadosSimulator:
                             viz, 'world/debris_center'+str(i)+str(contact_idx), 
                             [t[0], t[1], t[2]-0.017, 1, 0, 0, 0]
                             )
-        ee_positions_total = []                          
+        ee_positions_total = []
+        cost_success_total = []
         # check simulated trajectories
         for sim in range(x_sim.shape[0]):
             print("starting monte-carlo simulation nb: ", sim, ".....")
@@ -199,14 +199,16 @@ class CentroidalPlusLegKinematicsAcadosSimulator:
                 # else:
                 ee_positions_sim += [ee_positions_k]
             ee_positions_total += [ee_positions_sim]
+            print("total cost per simulation: ",total_cost[sim])
+            cost_success_total += [total_cost[sim, -1]]
             # print("total contact positions per simulation: ", ee_positions_total)
-        return nb_contact_location_constraint_violations, ee_positions_total
+        return nb_contact_location_constraint_violations, ee_positions_total, cost_success_total
 
 
     def simulate(self, x0,  w_total, nb_sims=1, MPC=False, WITH_DISTURBANCES=False):
         nx, N = x0.shape[0], self.N
         x_sim = np.zeros((nb_sims, N+1, nx))
-        x_diff = np.zeros((nb_sims, N+1, 1))
+        cost = np.zeros((nb_sims, N))
         x_sim[:, 0, :] = np.copy(x0)
         # nominal contact data
         contacts_logic_N = self.contact_data['contacts_logic']
@@ -227,8 +229,7 @@ class CentroidalPlusLegKinematicsAcadosSimulator:
         for sim in range(nb_sims):
             # start without disturbance on the initial state
             x0 = np.copy(x_sim[0, 0, :])
-            x_cl = np.copy(x_sim[0, 0, :])
-            for time_idx in range(N-1):
+            for time_idx in range(N):
                 # apply disturbances just before contact landing
                 if SAMPLE_DISTURBANCE:
                     w = w_total[sim, time_idx]
@@ -316,23 +317,27 @@ class CentroidalPlusLegKinematicsAcadosSimulator:
                 status = self.acados_integrator.solve()
                 if status != 0:
                     raise Exception('acados returned status {}. Exiting.'.format(status))    
-                # get next open-loop state
-                x0 = acados_integrator.get("x")
-                x_sim[sim, time_idx+1,:] = np.copy(x0)
                 # update warm-start
                 x_warm_start_N = np.concatenate([x_sol[1:], x_sol[-1].reshape(1, nx)]) #x_sol
                 u_warm_start_N = np.concatenate([u_sol[1:], u_sol[-1].reshape(1, 30)]) #u_sol
                 x_error_next =  np.concatenate(
                             [
-                            x_ref_N[time_idx+1][:12],      # centroidal + base position
-                            np.zeros(3),                   # base orientation  
-                            x_ref_N[time_idx+1][16:],      # joint positions + generalized velocities
+                            x_ref_N[time_idx][:12],      # centroidal + base position
+                            np.zeros(3),                 # base orientation  
+                            x_ref_N[time_idx][16:],      # joint positions + generalized velocities
                             ]
                         ) - x0
-                x_diff[sim, time_idx+1] = x_diff[sim, time_idx] + 0.5*(
-                     np.linalg.norm(((x_error_next.T @ Q) @ x_error_next))**2 + np.linalg.norm(((ol_u.T @ R) @ ol_u))**2
-                     )
-        return x_sim, x_diff
+                if time_idx == 0:
+                    cost[sim, time_idx] = 0.5*(
+                        np.linalg.norm(((x_error_next.T @ Q) @ x_error_next))**2 + np.linalg.norm(((ol_u.T @ R) @ ol_u))**2
+                    )
+                else:    
+                    cost[sim, time_idx] = cost[sim, time_idx-1] + 0.5*(
+                        np.linalg.norm(((x_error_next.T @ Q) @ x_error_next))**2 + np.linalg.norm(((ol_u.T @ R) @ ol_u))**2
+                    )
+                x0 = acados_integrator.get("x")
+                x_sim[sim, time_idx+1,:] = np.copy(x0)
+        return x_sim, cost
     
 if __name__ == "__main__":
     import conf_solo12_trot_step_adjustment_full_kinematics_mpc as conf
